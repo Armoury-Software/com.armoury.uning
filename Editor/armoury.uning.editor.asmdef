@@ -1,0 +1,18 @@
+{
+    "name": "armoury.uning.editor",
+    "rootNamespace": "Armoury.UI.Editor",
+    "references": [
+        "GUID:8f3b85d2e2a6d7d4b86778dbd5db0163"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
