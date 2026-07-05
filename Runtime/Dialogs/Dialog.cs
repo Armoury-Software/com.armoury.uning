@@ -129,7 +129,7 @@ namespace Armoury.UI.Dialog
             innerInjector.Inject(new DialogRef.Provider(dialogRef));
             _dialogs.Push(dialogRef);
 
-            ViewContainerRef.CreateChild<
+            ViewContainerRef.CreateChildViewContainerRef<
                 TComp,
                 VisualElement /* TODO: Use real VisualElement type, taken from metadata (this will need usage of Reflection)*/
             >(

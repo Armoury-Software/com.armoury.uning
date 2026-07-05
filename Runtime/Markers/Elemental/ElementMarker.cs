@@ -6,12 +6,7 @@ namespace Armoury.UI.Markers.Elemental
     [UxmlElement]
     public partial class ElementMarker : Marker
     {
-        public ElementMarker()
-        {
-            style.display = DisplayStyle.None;
-        }
-        
-        [UxmlObjectReference("arm-directives")]
+        [UxmlObjectReference("uning-directives")]
         public List<DirectiveDefinition> Directives { get; set; }
     }
 }

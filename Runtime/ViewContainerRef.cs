@@ -1,6 +1,4 @@
-﻿using System;
-using System.Linq;
-using UnityEngine.UIElements;
+﻿using UnityEngine.UIElements;
 using Armoury.UI.Injectors;
 using Armoury.UI.Markers;
 using Armoury.UI.Markers.Elemental;
@@ -28,7 +26,7 @@ namespace Armoury.UI
             this.anchor = anchor;
         }
 
-        public static ViewContainerRef CreateInPlace<TComp, TElement>(
+        public static ViewContainerRef CreateViewContainerRefInPlace<TComp, TElement>(
             TElement root,
             Injector injector
         )
@@ -45,23 +43,36 @@ namespace Armoury.UI
             return viewContainerRef;
         }
         
-        public static ViewContainerRef CreateChild<TComp, TElement>(
+        public static ViewContainerRef CreateChildViewContainerRef<TComp, TElement>(
             VisualElement parent,
-            Injector injector
+            Injector injector,
+            int? index = null
         )
             where TComp : Component, new()
             where TElement : VisualElement
         {
-            var innerInjector = new Injector(injector);
-            var elementRef = CreateAndInstantiateElementRefFromVisualTree<TComp>(parent, new Injector(innerInjector));
-            var viewContainerRef = new ViewContainerRef(elementRef, innerInjector);
+            // Create an Injector for the new ViewContainerRef as a child to the specified injector
+            var viewContainerInjector = new Injector(injector);
             
-            innerInjector.Inject(new Provider(viewContainerRef));
+            // Create an Injector for the ElementRef as a child to the newly-created ViewContainerRef injector
+            var elementInjector = new Injector(viewContainerInjector);
+            
+            var elementRef = CreateAndInstantiateElementRefFromVisualTree<TComp>(parent, elementInjector, index);
+            var viewContainerRef = new ViewContainerRef(elementRef, viewContainerInjector);
+            
+            viewContainerInjector.Inject(new Provider(viewContainerRef));
 
-            viewContainerRef.CreateComponent<TComp, TElement>(elementRef);
+            viewContainerRef.CreateComponent<TComp, TElement>(elementRef, index);
             
             return viewContainerRef;
         }
+        
+        private static readonly System.Reflection.MethodInfo CreateChildMethod =
+            typeof(ViewContainerRef)
+                .GetMethod(
+                    nameof(CreateChildViewContainerRef),
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static
+                )!;
 
         private static DirectiveRef<TComp> MakeComponent<TComp, TElement>(
             ElementRef elementRef
@@ -95,10 +106,17 @@ namespace Armoury.UI
             where TElement : VisualElement
         {
             return CreateComponent<TComp, TElement>(
-                CreateAndInstantiateElementRefFromVisualTree<TComp>(anchor.VisualElement.parent, new Injector(Injector)), 
+                CreateAndInstantiateElementRefFromVisualTree<TComp>(anchor.VisualElement.parent, new Injector(Injector), index), 
                 index: index
             );
         }
+        
+        private static readonly System.Reflection.MethodInfo InstanceCreateComponentMethod =
+            typeof(ViewContainerRef)
+                .GetMethod(
+                    nameof(CreateComponent),
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance
+                );
         
         private DirectiveRef<TComp> CreateComponent<TComp, TElement>(
             ElementRef elementRef,
@@ -127,7 +145,7 @@ namespace Armoury.UI
             
             return directiveRef;
         }
-
+        
         private void Scaffold(VisualElement root)
         {
             if (root == null)
@@ -158,42 +176,35 @@ namespace Armoury.UI
             {
                 var child = parent.hierarchy.ElementAt(i);
 
-                // TODO: Currently, NgIfDirectiveMarker only hides elements - it doesn't actually remove them from the
-                // TODO: .. DOM. In the future, we might want to actually remove them, and re-instantiate them when
-                // TODO: .. NgIfDirectiveMarker's Condition becomes true again.
                 if (Marker.Is<NgIfDirectiveMarker>(child, out var ngIfMarker))
                 {
                     ngIfMarker.Unwrap();
 
-                    // The marker stays at index i, and its former children are now inserted after it
-                    // Move past the hidden marker so the next iteration visits the first unwrapped child
                     i++;
 
                     continue;
                 }
-                
+
                 if (Marker.Is<NgForDirectiveMarker>(child, out var ngForMarker))
                 {
                     ngForMarker.Compile();
 
-                    // The generated instances are inserted after the marker
-                    // Move past the hidden marker; the next loop iteration will naturally visit the first generated...
-                    // .. instance
                     i++;
-                    
+
                     continue;
                 }
 
                 if (Marker.Is<ComponentMarker>(child, out var componentMarker))
                 {
-                    HandleScaffolded(
+                    HandleMarker(
                         marker: componentMarker,
                         currentLevelInstance: ref currentLevelInstance,
                         closestUpperLevelInstance: closestUpperLevelInstance
                     );
 
-                    // Stop processing this branch
-                    break;
+                    i++;
+
+                    continue;
                 }
 
                 ScaffoldChildren(
@@ -205,67 +216,80 @@ namespace Armoury.UI
                 i++;
             }
         }
-
-        private static void HandleScaffolded(
+        
+        private static void HandleMarker(
             ComponentMarker marker,
             ref ViewContainerRef currentLevelInstance,
-            ViewContainerRef closestUpperLevelInstance)
+            ViewContainerRef closestUpperLevelInstance
+        )
         {
+            var componentType = marker.ComponentType;
+            if (componentType == null)
+            {
+                Debug.LogError(
+                    $"[ViewContainerRef (HandleScaffolded):] Cannot scaffold marker ({marker.GetType().Name} {marker.name}) because its ComponentType is null."
+                );
+
+                return;
+            }
+
+            var parent = marker.parent;
+            var markerIndexInParent = parent.IndexOf(marker);
+            
+            // TODO: Dispose of any memory owned by the component marker
+            marker.RemoveFromHierarchy();
+
             if (currentLevelInstance != null)
             {
                 Debug.Log($"[ViewContainerRef (HandleScaffolded):] Found EXISTING ViewContainerRef ({currentLevelInstance}). Its anchor is ({currentLevelInstance.anchor.VisualElement.GetType().Name} {currentLevelInstance.anchor.VisualElement.name}).");
 
-                var elementRef = new ElementRef(marker.parent, new Injector(currentLevelInstance.Injector));
-                
-                typeof(ViewContainerRef)
-                    .GetMethod(nameof(MakeComponent), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
-                    .MakeGenericMethod(
-                        marker.Component.Type,
-                        marker.parent.GetType()
-                    )
-                    .Invoke(
-                        null,
-                        new object[]
-                        {
-                            elementRef
-                        }
-                );
-                
-                Debug.Log($"[ViewContainerRef (HandleScaffolded):] Made NEW component for EXISTING ViewContainerRef ({currentLevelInstance}). The ViewContainerRef anchor is ({currentLevelInstance.anchor.VisualElement.GetType().Name} {currentLevelInstance.anchor.VisualElement.name}). The ElementRef's element is ({elementRef.VisualElement.GetType().Name} {elementRef.VisualElement.name})");
-                Debug.Log($"[ViewContainerRef (HandleScaffolded):] The <NEW component for EXISTING ViewContainerRef>'s Injector lists as follows: {string.Join(",", elementRef.Injector.Providers.Select(prov => $"[{prov.GetType().Name}:] {prov.StringToken}/{prov.TypeToken}"))}");
+                InstanceCreateComponentMethod
+                    .MakeGenericMethod(componentType, typeof(VisualElement))
+                    .Invoke(currentLevelInstance, new object[] { markerIndexInParent });
+
+                // Debug.Log($"[ViewContainerRef (HandleScaffolded):] Made NEW component for EXISTING ViewContainerRef ({currentLevelInstance}). The ViewContainerRef anchor is ({currentLevelInstance.anchor.VisualElement.GetType().Name} {currentLevelInstance.anchor.VisualElement.name}). The ElementRef's element is ({elementRef.VisualElement.GetType().Name} {elementRef.VisualElement.name})");
+                // Debug.Log($"[ViewContainerRef (HandleScaffolded):] The <NEW component for EXISTING ViewContainerRef>'s Injector lists as follows: {string.Join(",", elementRef.Injector.Providers.Select(prov => $"[{prov.GetType().Name}:] {prov.StringToken}/{prov.TypeToken}"))}");
+
+                Debug.Log(
+                    $"[ViewContainerRef (HandleScaffolded):] Made NEW component for EXISTING ViewContainerRef ({currentLevelInstance}). The ViewContainerRef anchor is ({currentLevelInstance.anchor.VisualElement.GetType().Name} {currentLevelInstance.anchor.VisualElement.name})");
                 
                 return;
             }
             
-            // If we don't want to use Reflection in the future, we could create "creator" classes for each component
-            var method = typeof(ViewContainerRef)
-                .GetMethod(nameof(CreateInPlace), System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!
-                .MakeGenericMethod(
-                    marker.Component.Type,
-                    typeof(VisualElement)
+            currentLevelInstance = (ViewContainerRef)CreateChildMethod
+                .MakeGenericMethod(componentType, typeof(VisualElement))
+                .Invoke(
+                    null,
+                    new object[]
+                    {
+                        parent,
+                        closestUpperLevelInstance.anchor.Injector,
+                        markerIndexInParent
+                    }
                 );
 
-            currentLevelInstance = (ViewContainerRef)method.Invoke(
-                null,
-                new object[]
-                {
-                    marker.parent,
-                    new Injector(closestUpperLevelInstance!.anchor.Injector)
-                }
-            );
-            
-            Debug.Log($"[ViewContainerRef (HandleScaffolded):] Created NEW ViewContainerRef ({currentLevelInstance}). Its anchor is ({currentLevelInstance.anchor.VisualElement.GetType().Name} {currentLevelInstance.anchor.VisualElement.name}). It was made based on element ({marker.GetType().Name} {marker.name}), with parent ({marker.parent.GetType().Name} {marker.parent.name})");
+            Debug.Log($"[ViewContainerRef (HandleScaffolded):] Created NEW ViewContainerRef ({currentLevelInstance}). Its anchor is ({currentLevelInstance.anchor.VisualElement.GetType().Name} {currentLevelInstance.anchor.VisualElement.name}). It was made based on element ({marker.GetType().Name} {marker.name})");
         }
 
         private static ElementRef CreateAndInstantiateElementRefFromVisualTree<TComp>(
             VisualElement parent,
-            Injector injector
+            Injector injector,
+            int? index = null
         )
             where TComp : Component, new()
         {
             var metadata = injector.Resolve<ComponentMetadata<TComp>>(typeof(ComponentMetadata<TComp>));
             var element = metadata.UXML.Instantiate();
-            parent.Add(element);
+            element.name = typeof(TComp).Name;
+
+            if (index != null)
+            {
+                parent.Insert(index.Value, element);   
+            }
+            else
+            {
+                parent.Add(element);
+            }
 
             return new ElementRef(element, injector);
         }

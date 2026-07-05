@@ -64,7 +64,7 @@ namespace Armoury.UI
         private void Bootstrap<UComp, UElement>()
             where UComp : Component, new() where UElement : VisualElement
         {
-            ViewContainerRef.CreateInPlace<UComp, UElement>((UElement) _document.rootVisualElement, _injector);
+            ViewContainerRef.CreateViewContainerRefInPlace<UComp, UElement>((UElement) _document.rootVisualElement, _injector);
         }
 
         private void OnValidate()

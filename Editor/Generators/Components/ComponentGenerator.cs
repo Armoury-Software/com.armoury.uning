@@ -148,9 +148,12 @@ namespace Armoury.UI.Editor.Generators
         private static string GenerateComponentCode(string componentName)
         {
             var body =
-                $@"using Armoury.UI;
+                $@"using UnityEngine.UIElements;
+using Armoury.UI;
 using Armoury.UI.Injectors;
+using Armoury.UI.Markers.Elemental;
 
+[Component(TemplatePath = ""./{componentName}.uxml"")]
 public sealed class {componentName} : Component
 {{
     public {componentName}() : this(null) {{ }}
@@ -161,6 +164,8 @@ public sealed class {componentName} : Component
     // ReSharper disable once UnusedType.Global
     public class Provider : ComponentMetadata<{componentName}>.Provider {{ }}
 }}
+
+[UxmlElement] public partial class {componentName}Marker : ComponentMarker<{componentName}> {{ }}
 ";
 
             return body;

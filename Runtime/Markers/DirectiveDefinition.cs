@@ -10,7 +10,7 @@ namespace Armoury.UI.Markers
     {
         private System.Type _type;
 
-        [UxmlAttribute("arm-directive-type")]
+        [UxmlAttribute("uning-directive-type")]
         [UxmlTypeReference(typeof(Directive))]
         public System.Type Type
         {
@@ -37,7 +37,7 @@ namespace Armoury.UI.Markers
             }
         }
 
-        [UxmlObjectReference("arm-directive-inputs")]
+        [UxmlObjectReference("uning-directive-inputs")]
         public List<InputBase> Inputs { get; set; }
     }
 }

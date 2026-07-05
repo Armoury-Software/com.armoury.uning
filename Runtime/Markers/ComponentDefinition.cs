@@ -7,11 +7,7 @@ namespace Armoury.UI.Markers
     [UxmlObject]
     public partial class ComponentDefinition
     {
-        [UxmlAttribute("arm-component-type")]
-        [UxmlTypeReference(typeof(Component))]
-        public System.Type Type { get; set; }
-
-        [UxmlObjectReference("arm-component-inputs")]
+        [UxmlObjectReference("uning-component-inputs")]
         public List<InputBase> Inputs { get; set; }
     }
 }

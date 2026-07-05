@@ -8,7 +8,7 @@ namespace Armoury.UI.Markers
     [UxmlObject]
     public partial class Input<TDirective, TType> : InputBase where TDirective : Directive
     {
-        [UxmlAttribute("arm-input-name")] public string Name { get; set; }
+        [UxmlAttribute("uning-input-name")] public string Name { get; set; }
         
         public Input()
         {
@@ -25,10 +25,10 @@ namespace Armoury.UI.Markers
     [UxmlObject]
     public abstract partial class InputBase
     {
-        [UxmlAttribute("arm-input-name")]
+        [UxmlAttribute("uning-input-name")]
         public string Name { get; set; }
 
-        [UxmlAttribute("arm-input-field-type")]
+        [UxmlAttribute("uning-input-field-type")]
         public string FieldTypeName { get; set; }
     }
 
@@ -36,7 +36,7 @@ namespace Armoury.UI.Markers
     [UxmlObject]
     public partial class StringInput : InputBase
     {
-        [UxmlAttribute("arm-value")]
+        [UxmlAttribute("uning-input-value")]
         public string Value { get; set; }
     }
 
@@ -44,7 +44,7 @@ namespace Armoury.UI.Markers
     [UxmlObject]
     public partial class IntInput : InputBase
     {
-        [UxmlAttribute("arm-value")]
+        [UxmlAttribute("uning-input-value")]
         public int Value { get; set; }
     }
 
@@ -52,7 +52,7 @@ namespace Armoury.UI.Markers
     [UxmlObject]
     public partial class FloatInput : InputBase
     {
-        [UxmlAttribute("arm-value")]
+        [UxmlAttribute("uning-input-value")]
         public float Value { get; set; }
     }
 
@@ -60,7 +60,7 @@ namespace Armoury.UI.Markers
     [UxmlObject]
     public partial class BoolInput : InputBase
     {
-        [UxmlAttribute("arm-value")]
+        [UxmlAttribute("uning-input-value")]
         public bool Value { get; set; }
     }
 
@@ -68,7 +68,7 @@ namespace Armoury.UI.Markers
     [UxmlObject]
     public partial class ObjectInput : InputBase
     {
-        [UxmlAttribute("arm-value")]
+        [UxmlAttribute("uning-input-value")]
         public UnityEngine.Object Value { get; set; }
     }
 }
