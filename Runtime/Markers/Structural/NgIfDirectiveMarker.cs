@@ -8,14 +8,16 @@ namespace Armoury.UI.Markers.Structural
     public partial class NgIfDirectiveMarker : StructuralDirectiveMarker
     {
         private static readonly BindingId ConditionProperty = nameof(Condition);
+        private static readonly BindingId IsInvertedProperty = nameof(IsInverted);
 
         private readonly List<(VisualElement Element, StyleEnum<DisplayStyle> OriginalDisplay)> _controlledChildren = new();
+        
+#if UNITY_EDITOR
+        private readonly List<(VisualElement Element, StyleEnum<DisplayStyle> OriginalDisplay)> _editorPreviewChildren = new();
+#endif
 
-        private bool _isUnwrapped;
         private bool _condition = true;
-
-        [UxmlAttribute("condition"), CreateProperty]
-        public bool Condition
+        [UxmlAttribute("condition"), CreateProperty] public bool Condition
         {
             get => _condition;
             set
@@ -30,9 +32,36 @@ namespace Armoury.UI.Markers.Structural
             }
         }
 
+        private bool _isInverted;
+        [UxmlAttribute("invert"), CreateProperty] public bool IsInverted
+        {
+            get => _isInverted;
+            set
+            {
+                if (_isInverted == value)
+                    return;
+
+                _isInverted = value;
+                ApplyCondition();
+
+                NotifyPropertyChanged(IsInvertedProperty);
+            }
+        }
+        
+        public NgIfDirectiveMarker()
+        {
+#if UNITY_EDITOR
+            if (!UnityEngine.Application.isPlaying)
+            {
+                RegisterCallback<AttachToPanelEvent>(_ => ApplyCondition());
+                schedule.Execute(ApplyCondition);
+            }
+#endif
+        }
+
         public void Unwrap()
         {
-            if (_isUnwrapped)
+            if (IsCompiled)
                 return;
 
             var targetParent = parent;
@@ -40,7 +69,7 @@ namespace Armoury.UI.Markers.Structural
             if (targetParent == null)
                 return;
 
-            _isUnwrapped = true;
+            IsCompiled = true;
 
             var insertIndex = targetParent.IndexOf(this) + 1;
 
@@ -69,16 +98,67 @@ namespace Armoury.UI.Markers.Structural
 
         private void ApplyCondition()
         {
-            foreach (var entry in _controlledChildren)
-                ApplyCondition(entry.Element, entry.OriginalDisplay);
+            if (IsCompiled)
+            {
+                foreach (var entry in _controlledChildren)
+                    ApplyCondition(entry.Element, entry.OriginalDisplay);
+
+                return;
+            }
+
+#if UNITY_EDITOR
+            if (!UnityEngine.Application.isPlaying)
+            {
+                ApplyEditorPreviewCondition();
+            }
+#endif
         }
+
+#if UNITY_EDITOR
+        private void ApplyEditorPreviewCondition()
+        {
+            TrackCurrentTemplateChildren();
+
+            foreach (var entry in _editorPreviewChildren)
+            {
+                if (entry.Element.hierarchy.parent != this)
+                    continue;
+
+                ApplyCondition(entry.Element, entry.OriginalDisplay);
+            }
+        }
+
+        private void TrackCurrentTemplateChildren()
+        {
+            for (var i = 0; i < childCount; i++)
+            {
+                var child = this[i];
+
+                if (IsAlreadyTrackedForEditorPreview(child))
+                    continue;
+
+                _editorPreviewChildren.Add((child, child.style.display));
+            }
+        }
+
+        private bool IsAlreadyTrackedForEditorPreview(VisualElement child)
+        {
+            foreach (var entry in _editorPreviewChildren)
+            {
+                if (entry.Element == child)
+                    return true;
+            }
+
+            return false;
+        }
+#endif
 
         private void ApplyCondition(
             VisualElement child,
             StyleEnum<DisplayStyle> originalDisplay
         )
         {
-            child.style.display = _condition
+            child.style.display = (!IsInverted ? _condition : !_condition)
                 ? originalDisplay
                 : DisplayStyle.None;
         }

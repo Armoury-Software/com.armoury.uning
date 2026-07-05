@@ -5,6 +5,8 @@ namespace Armoury.UI.Markers
     [UxmlElement]
     public abstract partial class Marker : VisualElement
     {
+        public bool IsCompiled { get; protected set; }
+
         protected Marker()
         {
             pickingMode = PickingMode.Ignore;

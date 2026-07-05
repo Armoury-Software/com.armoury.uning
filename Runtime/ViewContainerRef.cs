@@ -38,7 +38,8 @@ namespace Armoury.UI
             
             injector.Inject(new Provider(viewContainerRef));
             
-            MakeComponent<TComp, TElement>(anchor);
+            // MakeComponent<TComp, TElement>(anchor);
+            viewContainerRef.CreateComponent<TComp, TElement>(anchor);
             
             return viewContainerRef;
         }
@@ -148,6 +149,8 @@ namespace Armoury.UI
         
         private void Scaffold(VisualElement root)
         {
+            Debug.Log($"[ViewContainerRef (Scaffold):] Scaffold has been called for ({root.GetType().Name} {root.name})");
+            
             if (root == null)
             {
                 return;
@@ -175,8 +178,11 @@ namespace Armoury.UI
             while (i < parent.hierarchy.childCount)
             {
                 var child = parent.hierarchy.ElementAt(i);
-
-                if (Marker.Is<NgIfDirectiveMarker>(child, out var ngIfMarker))
+                
+                // TODO: Currently, NgIfDirectiveMarker only hides elements - it doesn't actually remove them from the
+                // TODO: .. DOM. In the future, we might want to actually remove them, and re-instantiate them when
+                // TODO: .. NgIfDirectiveMarker's Condition becomes true again.
+                if (Marker.Is<NgIfDirectiveMarker>(child, out var ngIfMarker) && !ngIfMarker.IsCompiled)
                 {
                     ngIfMarker.Unwrap();
 
@@ -185,16 +191,75 @@ namespace Armoury.UI
                     continue;
                 }
 
-                if (Marker.Is<NgForDirectiveMarker>(child, out var ngForMarker))
+                if (Marker.Is<NgForDirectiveMarker>(child, out var ngForMarker) && !ngForMarker.IsCompiled)
                 {
-                    ngForMarker.Compile();
+                    if (!ngForMarker.Compile())
+                    {
+                        Debug.LogWarning($"[ViewContainerRef (ScaffoldChildren, NgForDirectiveMarker):] Compilation failed" +
+                                         $"to produce any NgFor item. This means that the NgFor will be populated after" +
+                                         $"the scaffolding has been done. Hence, the tree needs to be scaffolded again" +
+                                         $"after that has happened. This usually happens because the ItemsSource binding" +
+                                         $"is being resolved too late.");
+                        
+                        // TODO: IMPORTANT! DON'T DO THIS! This is just a band-aid workaround for the debug above, until ..
+                        // TODO: .. we get change detection and ViewRefs properly working!
+                        
+                        // TODO: What we need to do is, when ItemsSource of NgForDirectiveMarker gets modified ..
+                        // TODO: .. scaffolding should be done again for uncompiled markers
+                        // TODO: Ideally, an NgForDirectiveMarker should be deleted altogether, and its data should be
+                        // TODO: .. transferred to a ViewRef/EmbeddedViewRef (or whatever its name is), which in turn ..
+                        // TODO: .. communicates with the ViewContainerRef for a potential scaffolding
+                        
+                        // TODO: Remove ALL the code inside the brackets!!!!!!! Don't try to rewrite this!
+                        {
+                            var viewContainerInstance = currentLevelInstance ?? closestUpperLevelInstance;
+                            var hasCurrentLevelInstance = currentLevelInstance != null;
+
+                            ngForMarker.schedule
+                                .Execute(() =>
+                                {
+                                    foreach (var instance in ngForMarker.RemoveMe_Instances)
+                                    {
+                                        var compMark = (ComponentMarker)instance;
+                                        
+                                        var compParent = compMark.parent;
+                                        var compMarkerIndexInParent = compParent.IndexOf(compMark);
+            
+                                        // TODO: Dispose of any memory owned by the component marker
+                                        compMark.RemoveFromHierarchy();
+                                        
+                                        if (hasCurrentLevelInstance)
+                                        {
+                                            InstanceCreateComponentMethod
+                                                .MakeGenericMethod(compMark.ComponentType, typeof(VisualElement))
+                                                .Invoke(viewContainerInstance, new object[] { compMarkerIndexInParent });
+                                        }
+                                        else
+                                        {
+                                            CreateChildMethod
+                                                .MakeGenericMethod(compMark.ComponentType, typeof(VisualElement))
+                                                .Invoke(
+                                                    null,
+                                                    new object[]
+                                                    {
+                                                        parent,
+                                                        closestUpperLevelInstance.anchor.Injector,
+                                                        compMarkerIndexInParent
+                                                    }
+                                                );
+                                        }
+                                    }
+                                })
+                                .ExecuteLater(2000);
+                        }
+                    }
 
                     i++;
 
                     continue;
                 }
 
-                if (Marker.Is<ComponentMarker>(child, out var componentMarker))
+                if (Marker.Is<ComponentMarker>(child, out var componentMarker) && !componentMarker.IsCompiled)
                 {
                     HandleMarker(
                         marker: componentMarker,
