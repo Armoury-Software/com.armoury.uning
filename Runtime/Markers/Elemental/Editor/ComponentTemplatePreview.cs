@@ -187,6 +187,11 @@ namespace Armoury.UI.Markers.Elemental.Editor
                 parts.Add(rawPart);
             }
 
+            if (parts.Contains("_UniNg"))
+            {
+                parts.Remove("_UniNg");
+            }
+
             return string.Join("/", parts);
         }
 

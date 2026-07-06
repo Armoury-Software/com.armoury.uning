@@ -18,29 +18,18 @@ namespace Armoury.UI.Markers.Elemental
 #if UNITY_EDITOR
             if (!Application.isPlaying)
             {
-                EnsureComponentDefinition();
-                RegisterCallback<AttachToPanelEvent>(_ => EnsureComponentDefinition());
-                schedule.Execute(EnsureComponentDefinition);
-
+                dataSourceType = typeof(TComp);
+                
                 ComponentTemplatePreview.InstantiateInto<TComp>(this);
             }
 #endif
         }
-
-#if UNITY_EDITOR
-        private void EnsureComponentDefinition()
-        {
-            dataSourceType = typeof(TComp);
-
-            Component ??= new ComponentDefinition();
-        }
-#endif
     }
 
     [UxmlElement]
     public partial class ComponentMarker : ElementMarker
     {
-        [UxmlObjectReference("uning-component")]
+        [UxmlObjectReference("component")]
         public ComponentDefinition Component { get; set; }
         
         public virtual System.Type ComponentType { get; protected set; }

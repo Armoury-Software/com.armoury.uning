@@ -1,6 +1,5 @@
 ﻿using Unity.Properties;
 using Armoury.UI.Injectors;
-using Armoury.UI.Inputs;
 using UnityEngine;
 
 namespace Armoury.UI

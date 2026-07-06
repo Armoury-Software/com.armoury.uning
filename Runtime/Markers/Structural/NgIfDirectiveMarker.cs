@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using Unity.Properties;
+using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace Armoury.UI.Markers.Structural
@@ -158,7 +159,14 @@ namespace Armoury.UI.Markers.Structural
             StyleEnum<DisplayStyle> originalDisplay
         )
         {
-            child.style.display = (!IsInverted ? _condition : !_condition)
+            var isInverted = IsInverted;
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                isInverted = false;
+            }
+#endif
+            child.style.display = (!isInverted ? _condition : !_condition)
                 ? originalDisplay
                 : DisplayStyle.None;
         }

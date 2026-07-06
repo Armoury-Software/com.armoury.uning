@@ -147,6 +147,7 @@ namespace Armoury.UI.Editor.Generators
         
         private static string GenerateComponentCode(string componentName)
         {
+            // TODO: Move Provider definition to component shell
             var body =
                 $@"using UnityEngine.UIElements;
 using Armoury.UI;
@@ -154,7 +155,7 @@ using Armoury.UI.Injectors;
 using Armoury.UI.Markers.Elemental;
 
 [Component(TemplatePath = ""./{componentName}.uxml"")]
-public sealed class {componentName} : Component
+public sealed partial class {componentName} : Component
 {{
     public {componentName}() : this(null) {{ }}
     public {componentName}(Injector injector) : base(injector) {{ }}

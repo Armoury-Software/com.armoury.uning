@@ -27,12 +27,20 @@ namespace Armoury.UI
         
         protected Directive(Injector injector) : base(injector) { }
         
-        protected void NotifyChange([CallerMemberName] string propertyName = "")
+        
+        private void NotifyChange([CallerMemberName] string propertyName = "")
         {
             propertyChanged?.Invoke(
                 this,
                 new BindablePropertyChangedEventArgs(propertyName)
             );
+        }
+        
+        protected virtual void OnInputsChanged(InputChangeMask changed) { }
+
+        internal void __UniNgOnInputsChanged(InputChangeMask changed)
+        {
+            OnInputsChanged(changed);
         }
     }
 

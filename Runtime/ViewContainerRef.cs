@@ -97,6 +97,21 @@ namespace Armoury.UI
 
             component.Injector = elementRef.Injector;
 
+            Debug.Log($"[ViewContainerRef (MakeComponent):] Injected component ({component.GetType().Name})!");
+            if (component.GetType().Name.Equals("MainMenuCovenantOathboundComponent"))
+            {
+                InputApplier.Apply(
+                    component,
+                    new InputAssignment[]
+                    {
+                        new(
+                            StableHash.Fnv1A64("PROJECTA.UI.Menu.MainMenuCovenantOathboundComponent::name"),
+                            InputValue.FromString("Paducelu")
+                        )
+                    },
+                    1);
+            }
+
             return directiveRef;
         }
         
