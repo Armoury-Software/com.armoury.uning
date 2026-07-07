@@ -122,6 +122,7 @@ namespace Armoury.UI.Markers.Editor
                     // opacity = 0.5f
                 }
             };
+            
             container.Add(innerContainer);
 
             var inputSource = (InputValueSource) inputProperty.FindPropertyRelative(nameof(InputBinding.Source)).enumValueIndex;
@@ -137,6 +138,18 @@ namespace Armoury.UI.Markers.Editor
                     _ => valueField
                 }
             );
+            
+            innerContainer.Add(new Image
+            {
+                image = EditorGUIUtility.IconContent("UnLinked").image as Texture2D,
+                scaleMode = ScaleMode.ScaleToFit,
+                style =
+                {
+                    width = 16,
+                    height = 16,
+                    marginLeft = 6
+                }
+            });
 
             return container;
         }
@@ -146,43 +159,12 @@ namespace Armoury.UI.Markers.Editor
             SerializedProperty inputProperty
         )
         {
+            var inputNameValue = inputProperty.FindPropertyRelative(nameof(InputBinding.InputName)).stringValue;
             var literalValueProperty = inputProperty.FindPropertyRelative(nameof(InputBinding.LiteralValue));
-            var inputNameValue = inputProperty.FindPropertyRelative("InputName").stringValue;
-            var actualValueProperty = literalValueProperty.FindPropertyRelative("Value");
-            var valueField = new PropertyField(actualValueProperty) { label = inputNameValue, style = { flexGrow = 1 } };
+            var actualValueProperty = literalValueProperty.FindPropertyRelative(nameof(ObjectInputValueDefinition.Value));
             
-            valueField.RegisterCallback<SerializedPropertyChangeEvent>(_ =>
-            {
-                var serializedObject = definitionProperty.serializedObject;
-                var definitionPath = definitionProperty.propertyPath;
-                var inputPath = inputProperty.propertyPath;
-
-                serializedObject.Update();
-
-                var freshDefinition = serializedObject.FindProperty(definitionPath);
-                var freshInput = serializedObject.FindProperty(inputPath);
-
-                var freshLiteral =
-                    freshInput.FindPropertyRelative(nameof(InputBinding.LiteralValue));
-
-                MarkUxmlAttributeAsOverridden(
-                    freshDefinition,
-                    nameof(DirectiveDefinition.Inputs)
-                );
-
-                MarkUxmlAttributeAsOverridden(
-                    freshInput,
-                    nameof(InputBinding.LiteralValue)
-                );
-
-                MarkUxmlAttributeAsOverridden(
-                    freshLiteral,
-                    "Value"
-                );
-
-                serializedObject.ApplyModifiedProperties();
-                EditorUtility.SetDirty(serializedObject.targetObject);
-            });
+            var valueField = new PropertyField(actualValueProperty) { label = inputNameValue, style = { flexGrow = 1 } };
+            valueField.BindProperty(actualValueProperty);
 
             return valueField;
         }
@@ -192,14 +174,20 @@ namespace Armoury.UI.Markers.Editor
             SerializedProperty inputProperty
         )
         {
-            var root = new VisualElement();
+            var root = new VisualElement { style = { flexGrow = 1 } };
+
+            var pathProperty = inputProperty.FindPropertyRelative(nameof(InputBinding.BindingPath));
+            var pathField = new TextField("Testulescu") { style = { flexGrow = 1 } };
+            pathField.BindProperty(pathProperty);
+            root.Add(pathField);
             
+            /*
             var bindingPathProperty = inputProperty.FindPropertyRelative(nameof(InputBinding.BindingPath));
             var parentBindingIdProperty = inputProperty.FindPropertyRelative(nameof(InputBinding.ParentBindingId));
             
             // TODO: Add actual binding parent picker
             root.Add(new PropertyField(bindingPathProperty, "Parent Binding Path"));
-            root.Add(new PropertyField(parentBindingIdProperty, "Parent Binding Id"));
+            root.Add(new PropertyField(parentBindingIdProperty, "Parent Binding Id"));*/
 
             return root;
         }
