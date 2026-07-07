@@ -3,5 +3,5 @@
 namespace Armoury.UI.Markers
 {
     [UxmlObject, System.Serializable]
-    public partial class ComponentDefinition : DirectiveDefinition {}
+    public partial class ComponentDefinition : DirectiveDefinition { }
 }

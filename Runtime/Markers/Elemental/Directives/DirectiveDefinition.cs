@@ -1,4 +1,5 @@
-﻿using UnityEngine.UIElements;
+﻿using System.Collections.Generic;
+using UnityEngine.UIElements;
 
 namespace Armoury.UI.Markers
 {
@@ -11,11 +12,11 @@ namespace Armoury.UI.Markers
         [UxmlObjectReference("inputs-legacy")]
         public InputBinding[] Inputs_Legacy { get; set; }
 
-        [UxmlObjectReference("inputs")] public InputBindingsCollection Inputs { get; set; }
+        [UxmlObjectReference("inputs")] public List<InputBinding> Inputs { get; set; }
 
         // [UxmlAttribute("input-count")]
         // public int InputCount { get; set; }
-        
+
         // [System.NonSerialized] internal InputAssignment[] CompiledInputs;
         // [System.NonSerialized] internal int CompiledInputCounts;
         // [System.NonSerialized] internal bool IsDirty = true;

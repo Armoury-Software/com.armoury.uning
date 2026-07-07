@@ -28,7 +28,8 @@ namespace Armoury.UI
 
         public static ViewContainerRef CreateViewContainerRefInPlace<TComp, TElement>(
             TElement root,
-            Injector injector
+            Injector injector,
+            InputAssignment[] inputs = null
         )
             where TComp : Component, new()
             where TElement : VisualElement
@@ -38,8 +39,7 @@ namespace Armoury.UI
             
             injector.Inject(new Provider(viewContainerRef));
             
-            // MakeComponent<TComp, TElement>(anchor);
-            viewContainerRef.CreateComponent<TComp, TElement>(anchor);
+            viewContainerRef.CreateComponent<TComp, TElement>(anchor, inputs: inputs);
             
             return viewContainerRef;
         }
@@ -47,7 +47,8 @@ namespace Armoury.UI
         public static ViewContainerRef CreateChildViewContainerRef<TComp, TElement>(
             VisualElement parent,
             Injector injector,
-            int? index = null
+            int? index = null,
+            InputAssignment[] inputs = null
         )
             where TComp : Component, new()
             where TElement : VisualElement
@@ -63,7 +64,7 @@ namespace Armoury.UI
             
             viewContainerInjector.Inject(new Provider(viewContainerRef));
 
-            viewContainerRef.CreateComponent<TComp, TElement>(elementRef, index);
+            viewContainerRef.CreateComponent<TComp, TElement>(elementRef, index: index, inputs: inputs);
             
             return viewContainerRef;
         }
@@ -76,7 +77,8 @@ namespace Armoury.UI
                 )!;
 
         private static DirectiveRef<TComp> MakeComponent<TComp, TElement>(
-            ElementRef elementRef
+            ElementRef elementRef,
+            InputAssignment[] inputs = null
         )
             where TComp : Component, new()
             where TElement : VisualElement
@@ -95,22 +97,12 @@ namespace Armoury.UI
             var directiveRef = new DirectiveRef<TComp>(component, elementRef, elementRef.Injector);
             elementRef.Injector.Inject(new DirectiveRef<TComp>.Provider(directiveRef));
 
-            component.Injector = elementRef.Injector;
-
-            Debug.Log($"[ViewContainerRef (MakeComponent):] Injected component ({component.GetType().Name})!");
-            if (component.GetType().Name.Equals("MainMenuCovenantOathboundComponent"))
+            if (inputs != null)
             {
-                InputApplier.Apply(
-                    component,
-                    new InputAssignment[]
-                    {
-                        new(
-                            StableHash.Fnv1A64("PROJECTA.UI.Menu.MainMenuCovenantOathboundComponent::name"),
-                            InputValue.FromString("Paducelu")
-                        )
-                    },
-                    1);
+                InputApplier.Apply(component, inputs, inputs.Length);
             }
+
+            component.Injector = elementRef.Injector;
 
             return directiveRef;
         }
@@ -136,7 +128,8 @@ namespace Armoury.UI
         
         private DirectiveRef<TComp> CreateComponent<TComp, TElement>(
             ElementRef elementRef,
-            int? index = null
+            int? index = null,
+            InputAssignment[] inputs = null
         )
             where TComp : Component, new()
             where TElement : VisualElement
@@ -155,7 +148,7 @@ namespace Armoury.UI
                 _length++;
             }
 
-            var directiveRef = MakeComponent<TComp, TElement>(elementRef);
+            var directiveRef = MakeComponent<TComp, TElement>(elementRef, inputs: inputs);
 
             Scaffold(elementRef.VisualElement);
             
@@ -247,7 +240,7 @@ namespace Armoury.UI
                                         {
                                             InstanceCreateComponentMethod
                                                 .MakeGenericMethod(compMark.ComponentType, typeof(VisualElement))
-                                                .Invoke(viewContainerInstance, new object[] { compMarkerIndexInParent });
+                                                .Invoke(viewContainerInstance, new object[] { compMarkerIndexInParent, null });
                                         }
                                         else
                                         {
@@ -259,7 +252,8 @@ namespace Armoury.UI
                                                     {
                                                         parent,
                                                         closestUpperLevelInstance.anchor.Injector,
-                                                        compMarkerIndexInParent
+                                                        compMarkerIndexInParent,
+                                                        null
                                                     }
                                                 );
                                         }
@@ -313,6 +307,21 @@ namespace Armoury.UI
                 return;
             }
 
+            InputAssignment[] inputs = null;
+            if (marker.Component?.Inputs != null)
+            {
+                inputs = new InputAssignment[marker.Component.Inputs.Count];
+                for (var i = 0; i < marker.Component.Inputs.Count; i++)
+                {
+                    var binding = marker.Component.Inputs[i];
+
+                    if (binding.Source == InputValueSource.Literal)
+                    {
+                        inputs[i] = new InputAssignment(binding.InputId, binding.LiteralValue.ToInputValue());
+                    }
+                }
+            }
+
             var parent = marker.parent;
             var markerIndexInParent = parent.IndexOf(marker);
             
@@ -325,7 +334,7 @@ namespace Armoury.UI
 
                 InstanceCreateComponentMethod
                     .MakeGenericMethod(componentType, typeof(VisualElement))
-                    .Invoke(currentLevelInstance, new object[] { markerIndexInParent });
+                    .Invoke(currentLevelInstance, new object[] { markerIndexInParent, inputs });
 
                 // Debug.Log($"[ViewContainerRef (HandleScaffolded):] Made NEW component for EXISTING ViewContainerRef ({currentLevelInstance}). The ViewContainerRef anchor is ({currentLevelInstance.anchor.VisualElement.GetType().Name} {currentLevelInstance.anchor.VisualElement.name}). The ElementRef's element is ({elementRef.VisualElement.GetType().Name} {elementRef.VisualElement.name})");
                 // Debug.Log($"[ViewContainerRef (HandleScaffolded):] The <NEW component for EXISTING ViewContainerRef>'s Injector lists as follows: {string.Join(",", elementRef.Injector.Providers.Select(prov => $"[{prov.GetType().Name}:] {prov.StringToken}/{prov.TypeToken}"))}");
@@ -344,7 +353,8 @@ namespace Armoury.UI
                     {
                         parent,
                         closestUpperLevelInstance.anchor.Injector,
-                        markerIndexInParent
+                        markerIndexInParent,
+                        inputs
                     }
                 );
 

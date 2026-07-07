@@ -1,16 +1,9 @@
 ﻿using System.Collections.Generic;
+using Unity.Properties;
 using UnityEngine.UIElements;
 
 namespace Armoury.UI.Markers
 {
-    [System.Serializable]
-    [UxmlObject]
-    public partial class InputBindingsCollection
-    {
-        [UxmlAttribute("testulescu")] public string Testulescu { get; set; }
-        [UxmlObjectReference("collection")] public List<InputBinding> Inputs { get; set; }
-    }
-
     [System.Serializable]
     [UxmlObject]
     public partial class DirectivesCollection
@@ -35,7 +28,7 @@ namespace Armoury.UI.Markers
         public string InputAlias { get; set; }
 
         [UxmlAttribute("source")]
-        public ComponentInputValueSource Source { get; set; }
+        public InputValueSource Source { get; set; }
 
         [UxmlAttribute("parent-binding-id")]
         public ulong ParentBindingId { get; set; }
@@ -62,9 +55,14 @@ namespace Armoury.UI.Markers
                 InputName = descriptor.MemberName,
                 InputAlias = descriptor.Alias,
                 Kind = descriptor.Kind,
-                Source = ComponentInputValueSource.Literal,
+                Source = InputValueSource.Literal,
                 LiteralValue = InputValueDefinition.Create(descriptor)
             };
+        }
+
+        public override string ToString()
+        {
+            return $"{GetType().Name}(Name={InputName}, Alias={InputAlias}, Kind={Kind}, Index={InputIndex}, Id={InputId})";
         }
     }
     
@@ -104,7 +102,7 @@ namespace Armoury.UI.Markers
         }
     }*/
 
-    public enum ComponentInputValueSource
+    public enum InputValueSource
     {
         Literal,
         ParentBinding
@@ -133,7 +131,7 @@ namespace Armoury.UI.Markers
     public sealed partial class BoolInputValueDefinition : InputValueDefinition
     {
         [UxmlAttribute("value")]
-        public bool Value;
+        public bool Value { get; set; }
 
         public override InputValue ToInputValue()
         {
@@ -146,7 +144,7 @@ namespace Armoury.UI.Markers
     public sealed partial class IntInputValueDefinition : InputValueDefinition
     {
         [UxmlAttribute("value")]
-        public int Value;
+        public int Value { get; set; }
 
         public override InputValue ToInputValue()
         {
@@ -159,7 +157,7 @@ namespace Armoury.UI.Markers
     public sealed partial class FloatInputValueDefinition : InputValueDefinition
     {
         [UxmlAttribute("value")]
-        public float Value;
+        public float Value { get; set; }
 
         public override InputValue ToInputValue()
         {
@@ -172,7 +170,7 @@ namespace Armoury.UI.Markers
     public sealed partial class DoubleInputValueDefinition : InputValueDefinition
     {
         [UxmlAttribute("value")]
-        public double Value;
+        public double Value { get; set; }
 
         public override InputValue ToInputValue()
         {
@@ -184,8 +182,8 @@ namespace Armoury.UI.Markers
     [UxmlObject]
     public sealed partial class StringInputValueDefinition : InputValueDefinition
     {
-        [UxmlAttribute("value")]
-        public string Value;
+        [UxmlAttribute("value"), CreateProperty]
+        public string Value { get; set; }
 
         public override InputValue ToInputValue()
         {
@@ -198,7 +196,7 @@ namespace Armoury.UI.Markers
     public sealed partial class ObjectInputValueDefinition : InputValueDefinition
     {
         [UxmlAttribute("value")]
-        public UnityEngine.Object Value;
+        public UnityEngine.Object Value { get; set; }
 
         public override InputValue ToInputValue()
         {
