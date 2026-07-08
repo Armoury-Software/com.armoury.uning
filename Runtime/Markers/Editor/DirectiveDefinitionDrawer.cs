@@ -324,7 +324,7 @@ namespace Armoury.UI.Markers.Editor
                     textOverflow = TextOverflow.Ellipsis,
                     overflow = Overflow.Hidden,
                     flexShrink = 1,
-                    flexGrow = 0,
+                    flexGrow = 1,
                     unityFontStyleAndWeight = FontStyle.Normal,
                     opacity = 0.7f
                 }

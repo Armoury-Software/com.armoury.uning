@@ -2,14 +2,9 @@
 
 namespace Armoury.UI
 {
-    [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property, Inherited = true)]
-    public sealed class InputAttribute : Attribute
+    [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
+    public sealed class InputAttribute : BindingAttribute
     {
-        public string DisplayName { get; }
-
-        public InputAttribute(string displayName = null)
-        {
-            DisplayName = displayName;
-        }
+        public InputAttribute(string displayName = null) : base(displayName) { }
     }
 }
