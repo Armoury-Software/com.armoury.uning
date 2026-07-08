@@ -109,14 +109,16 @@ namespace Armoury.UI
         }
         
         public DirectiveRef<TComp> CreateComponent<TComp, TElement>(
-            int? index = null
+            int? index = null,
+            InputAssignment[] inputs = null
         )
             where TComp : Component, new()
             where TElement : VisualElement
         {
             return CreateComponent<TComp, TElement>(
                 CreateAndInstantiateElementRefFromVisualTree<TComp>(anchor.VisualElement.parent, new Injector(Injector), index), 
-                index: index
+                index: index,
+                inputs: inputs
             );
         }
         
