@@ -18,7 +18,7 @@ namespace Armoury.UI.Markers.Editor
             var root = UniNgDrawerUtils.DrawRootContainer();
             
             root.Add(UniNgDrawerUtils.DrawHeader(
-                "DirectiveDefinition", 
+                "DirectiveDefinition",
                 UniNgDrawerUtils.DrawUniNg(),
                 UniNgDrawerUtils.DrawTypeBadge(property))
             );
@@ -116,8 +116,10 @@ namespace Armoury.UI.Markers.Editor
                     marginBottom = 4,
                 }
             };
-            
-            container.Add(new Toggle { style = { marginRight = 6, marginBottom = 0 } });
+
+            var enabledToggle = new Toggle { style = { marginRight = 6, marginBottom = 0 } };
+            enabledToggle.BindProperty(inputProperty.FindPropertyRelative(nameof(InputBinding.Enabled)));
+            container.Add(enabledToggle);
             
             var innerContainer = new VisualElement
             {
@@ -130,6 +132,9 @@ namespace Armoury.UI.Markers.Editor
                     // opacity = 0.5f
                 }
             };
+
+            ToggleEnabled(enabledToggle.value, innerContainer);
+            enabledToggle.RegisterValueChangedCallback(evt => ToggleEnabled(evt.newValue, innerContainer));
             
             container.Add(innerContainer);
 
@@ -213,6 +218,11 @@ namespace Armoury.UI.Markers.Editor
                 image.image = EditorGUIUtility.IconContent(
                     isBound ? "Linked" : "UnLinked"
                 ).image as Texture2D;
+            }
+
+            static void ToggleEnabled(bool newValue, VisualElement container)
+            {
+                container.style.opacity = newValue ? 1.0f : 0.5f;
             }
         }
 

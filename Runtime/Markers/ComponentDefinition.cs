@@ -15,6 +15,9 @@ namespace Armoury.UI.Markers
     [UxmlObject]
     public partial class InputBinding
     {
+        [UxmlAttribute("enabled")]
+        public bool Enabled { get; set; }
+
         [UxmlAttribute("input-id")]
         public ulong InputId { get; set; }
 
@@ -220,6 +223,7 @@ namespace Armoury.UI.Markers
             for (var i = 0; i < definition.Inputs.Count; i++)
             {
                 var binding = definition.Inputs[i];
+                if (!binding.Enabled) continue;
 
                 InputValue value;
 
