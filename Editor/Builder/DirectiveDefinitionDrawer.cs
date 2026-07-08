@@ -4,8 +4,9 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.UIElements;
 using UnityEditor;
-using UnityEditor.UIElements;
+
 using Armoury.UI.Markers.Elemental;
+using UnityEditor.UIElements;
 
 namespace Armoury.UI.Markers.Editor
 {
