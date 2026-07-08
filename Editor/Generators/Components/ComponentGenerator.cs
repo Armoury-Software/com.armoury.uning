@@ -157,13 +157,21 @@ using Armoury.UI.Markers.Elemental;
 [Component(TemplatePath = ""./{componentName}.uxml"")]
 public sealed partial class {componentName} : Component
 {{
+    [Binding] public string Bar = ""Foo"";
+    [Input] public string Foo = ""Bar"";
+
     public {componentName}() : this(null) {{ }}
     public {componentName}(Injector injector) : base(injector) {{ }}
 
     protected override void OnInjected() {{ }}
 
-    // ReSharper disable once UnusedType.Global
-    public class Provider : ComponentMetadata<{componentName}>.Provider {{ }}
+    protected override void OnInputsChanged(InputChangeMask changed)
+    {{
+        if (changed.Has(__InputIndex.Foo))
+        {{
+            UnityEngine.Debug.Log($""Input Foo has changed! New value: {{Foo}}"");
+        }}
+    }}
 }}
 
 [UxmlElement] public partial class {componentName}Marker : ComponentMarker<{componentName}> {{ }}
