@@ -9,16 +9,10 @@ namespace Armoury.UI.Markers
         [UxmlAttribute("type")]
         public System.Type Type;
         
-        [UxmlObjectReference("inputs-legacy")]
-        public InputBinding[] Inputs_Legacy { get; set; }
-
-        [UxmlObjectReference("inputs")] public List<InputBinding> Inputs { get; set; }
-
-        // [UxmlAttribute("input-count")]
-        // public int InputCount { get; set; }
-
-        // [System.NonSerialized] internal InputAssignment[] CompiledInputs;
-        // [System.NonSerialized] internal int CompiledInputCounts;
-        // [System.NonSerialized] internal bool IsDirty = true;
+        [UxmlAttribute("parent-type"), UxmlTypeReference(typeof(Component))]
+        public System.Type ParentType;
+        
+        [UxmlObjectReference("inputs")]
+        public List<InputBinding> Inputs { get; set; }
     }
 }

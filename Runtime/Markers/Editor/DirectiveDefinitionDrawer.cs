@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UIElements;
 using UnityEditor;
@@ -29,6 +31,8 @@ namespace Armoury.UI.Markers.Editor
     [CustomPropertyDrawer(typeof(ComponentDefinition.UxmlSerializedData))]
     public sealed class ComponentDefinitionDrawer : PropertyDrawer
     {
+        private const string InputBindingSourceImageClass = "input-bindings-collection__item__binding-image";
+        
         public override VisualElement CreatePropertyGUI(SerializedProperty property)
         {
             var componentType = MarkerFinderUtils.FindComponentTypeFromProperty(property);
@@ -55,7 +59,6 @@ namespace Armoury.UI.Markers.Editor
         )
         {
             var descriptors = ComponentInputRegistry.Get(componentType);
-            
             var container = UniNgDrawerUtils.DrawRootContainer();
             
             container.Add(UniNgDrawerUtils.DrawHeader(
@@ -81,6 +84,8 @@ namespace Armoury.UI.Markers.Editor
                     definitionProperty.FindPropertyRelative(nameof(DirectiveDefinition.Inputs));
                 
                 container.Add(DrawSingleInput(
+                    i,
+                    componentType,
                     in descriptors[i],
                     definitionProperty,
                     bindingsArrayProperty,
@@ -92,6 +97,8 @@ namespace Armoury.UI.Markers.Editor
         }
 
         private static VisualElement DrawSingleInput(
+            int index,
+            Type componentType,
             in InputDescriptor descriptor,
             SerializedProperty definitionProperty,
             SerializedProperty inputsProperty,
@@ -125,11 +132,19 @@ namespace Armoury.UI.Markers.Editor
             
             container.Add(innerContainer);
 
-            var inputSource = (InputValueSource) inputProperty.FindPropertyRelative(nameof(InputBinding.Source)).enumValueIndex;
+            var inputSourceProperty = inputProperty.FindPropertyRelative(nameof(InputBinding.Source));
+            var inputSource = (InputValueSource) inputSourceProperty.enumValueIndex;
 
-            var valueField = inputSource == InputValueSource.Literal
-                ? DrawLiteralField(definitionProperty, inputProperty)
-                : DrawBindingField(definitionProperty, inputProperty);
+            var valueField = inputSource == InputValueSource.ParentBinding
+                ? DrawBindingField(
+                    descriptor.Kind, 
+                    definitionProperty, 
+                    inputProperty, 
+                    () => RebuildSingleInput(
+                        container, index, componentType, definitionProperty, inputsProperty, inputProperty
+                    )
+                )
+                : DrawLiteralField(descriptor.Kind, definitionProperty, inputProperty);
             
             innerContainer.Add(
                 descriptor.Kind switch
@@ -138,23 +153,118 @@ namespace Armoury.UI.Markers.Editor
                     _ => valueField
                 }
             );
+
+            var toggle = DrawSourceButton(out var bindingImage);
+            innerContainer.Add(toggle);
             
-            innerContainer.Add(new Image
+            SetSourceButtonState(bindingImage, inputSource == InputValueSource.ParentBinding);
+            toggle.RegisterValueChangedCallback(evt =>
             {
-                image = EditorGUIUtility.IconContent("UnLinked").image as Texture2D,
-                scaleMode = ScaleMode.ScaleToFit,
-                style =
-                {
-                    width = 16,
-                    height = 16,
-                    marginLeft = 6
-                }
+                SetSourceButtonState(bindingImage, evt.newValue);
+                OnInputValueSourceChanged(inputProperty, bindingImage, evt);
+                RebuildSingleInput(container, index, componentType, definitionProperty, inputsProperty, inputProperty);
             });
 
             return container;
+
+            Toggle DrawSourceButton(out Image image)
+            {
+                var toggleElement = new Toggle
+                {
+                    name = "Input Binding Source", 
+                    style = { height = 18, width = 18, marginTop = 3 }
+                };
+                
+                var checkmark = toggleElement.Q<VisualElement>(name: "unity-checkmark");
+                checkmark.style.width = checkmark.style.height = new Length(100, LengthUnit.Percent);
+
+                image = new Image
+                {
+                    image = EditorGUIUtility.IconContent("UnLinked").image as Texture2D,
+                    scaleMode = ScaleMode.ScaleToFit,
+                    pickingMode = PickingMode.Ignore,
+                    style =
+                    {
+                        backgroundColor = new Color(0.16f, 0.16f, 0.16f),
+                        width = 16,
+                        height = 16,
+                        position = Position.Absolute,
+                        left = 1,
+                        top = 1,
+                        borderTopRightRadius = 2,
+                        borderBottomRightRadius = 2,
+                        borderBottomLeftRadius = 2,
+                        borderTopLeftRadius = 2
+                    }
+                };
+                image.AddToClassList(InputBindingSourceImageClass);
+                
+                toggleElement.Add(image);
+
+                return toggleElement;
+            }
+            void SetSourceButtonState(Image image, bool isBound)
+            {
+                image.style.backgroundColor = isBound
+                    ? new Color(0.41f, 0.41f, 0.41f)
+                    : new Color(0.16f, 0.16f, 0.16f);
+
+                image.image = EditorGUIUtility.IconContent(
+                    isBound ? "Linked" : "UnLinked"
+                ).image as Texture2D;
+            }
+        }
+
+        private static void RebuildSingleInput(
+            VisualElement input,
+            int index,
+            Type componentType,
+            SerializedProperty definitionProperty,
+            SerializedProperty inputsProperty,
+            SerializedProperty inputProperty
+        )
+        {
+            var descriptor = ComponentInputRegistry.Get(componentType)[index];
+            var parent = input.parent;
+            var indexInHierarchy = parent.IndexOf(input);
+            
+            input.RemoveFromHierarchy();
+
+            parent.Insert(
+                indexInHierarchy,
+                DrawSingleInput(
+                    index,
+                    componentType,
+                    in descriptor,
+                    definitionProperty,
+                    inputsProperty,
+                    inputProperty
+                ));
+        }
+
+        private static void OnInputValueSourceChanged(
+            SerializedProperty inputProperty,
+            Image image,
+            ChangeEvent<bool> evt
+        )
+        {
+            var sourceProperty = inputProperty.FindPropertyRelative(nameof(InputBinding.Source));
+            var newValue = Mathf.FloorToInt(Mathf.Repeat(sourceProperty.enumValueIndex + 1,
+                Enum.GetValues(typeof(InputValueSource)).Length - 0.1f));
+            
+            sourceProperty.enumValueIndex = newValue;
+            sourceProperty.serializedObject.Update();
+            sourceProperty.serializedObject.ApplyModifiedProperties();
+            
+            SetWithOverride(inputProperty, nameof(InputBinding.Source), p => p.enumValueIndex = newValue);
+            MarkUxmlAttributeAsOverridden(inputProperty, nameof(InputBinding.Source));
+
+            inputProperty.serializedObject.ApplyModifiedProperties();
+            EditorUtility.SetDirty(inputProperty.serializedObject.targetObject);
         }
 
         private static VisualElement DrawLiteralField(
+            InputValueKind kind,
             SerializedProperty definitionProperty,
             SerializedProperty inputProperty
         )
@@ -170,24 +280,98 @@ namespace Armoury.UI.Markers.Editor
         }
         
         private static VisualElement DrawBindingField(
+            InputValueKind kind,
             SerializedProperty definitionProperty,
-            SerializedProperty inputProperty
+            SerializedProperty inputProperty,
+            Action changed
         )
         {
-            var root = new VisualElement { style = { flexGrow = 1 } };
-
-            var pathProperty = inputProperty.FindPropertyRelative(nameof(InputBinding.BindingPath));
-            var pathField = new TextField("Testulescu") { style = { flexGrow = 1 } };
-            pathField.BindProperty(pathProperty);
-            root.Add(pathField);
-            
-            /*
+            var inputNameValue = inputProperty.FindPropertyRelative(nameof(InputBinding.InputName)).stringValue;
             var bindingPathProperty = inputProperty.FindPropertyRelative(nameof(InputBinding.BindingPath));
             var parentBindingIdProperty = inputProperty.FindPropertyRelative(nameof(InputBinding.ParentBindingId));
+            var inputSourceProperty = inputProperty.FindPropertyRelative(nameof(InputBinding.Source));
+
+            var root = new VisualElement
+            {
+                name = "Bound Input Field",
+                style =
+                {
+                    flexDirection = FlexDirection.Row,
+                    alignItems = Align.Center,
+                    flexGrow = 1,
+                }
+            };
+
+            root.Add(new Label(inputNameValue + ":")
+            {
+                style =
+                {
+                    marginRight = 16
+                }
+            });
+
+            var bindingValue = (
+                !string.IsNullOrEmpty(bindingPathProperty.stringValue)
+                && parentBindingIdProperty.ulongValue != 0
+            )
+                ? $"{bindingPathProperty.stringValue} / {parentBindingIdProperty.ulongValue}"
+                : "Unset";
             
-            // TODO: Add actual binding parent picker
-            root.Add(new PropertyField(bindingPathProperty, "Parent Binding Path"));
-            root.Add(new PropertyField(parentBindingIdProperty, "Parent Binding Id"));*/
+            root.Add(new Label(bindingValue)
+            {
+                style =
+                {
+                    textOverflow = TextOverflow.Ellipsis,
+                    overflow = Overflow.Hidden,
+                    flexShrink = 1,
+                    flexGrow = 0,
+                    unityFontStyleAndWeight = FontStyle.Normal,
+                    opacity = 0.7f
+                }
+            });
+
+            var editButton = new Button()
+            {
+                text = "",
+                iconImage = EditorGUIUtility.IconContent("editicon.sml").image as Texture2D,
+            };
+            root.Add(editButton);
+            
+            var descriptorKind = kind;
+            var parentTypeProperty = definitionProperty.FindPropertyRelative(nameof(DirectiveDefinition.ParentType));
+            var parentType = SerializedTypeUtility.GetTypeValue(parentTypeProperty);
+            
+            editButton.RegisterCallback<ClickEvent>(_ =>
+            {
+                ParentBindingPathWindow.Open(
+                    dataSourceType: parentType,
+                    expectedKind: descriptorKind,
+                    onDataSourceTypeSelected: selectedType =>
+                    {
+                        parentTypeProperty.serializedObject.Update();
+
+                        var property = parentTypeProperty.serializedObject.FindProperty(parentTypeProperty.propertyPath);
+
+                        SerializedTypeUtility.SetTypeValue(property, selectedType);
+
+                        parentTypeProperty.serializedObject.ApplyModifiedProperties();
+                        parentTypeProperty.serializedObject.Update();
+                    },
+                    onBindingSelected: (selectedType, bindingDescriptor) =>
+                    {
+                        inputProperty.serializedObject.Update();
+
+                        inputSourceProperty.enumValueIndex = (int)InputValueSource.ParentBinding;
+                    
+                        parentBindingIdProperty.ulongValue = bindingDescriptor.Id;
+                        bindingPathProperty.stringValue = bindingDescriptor.Path;
+
+                        inputProperty.serializedObject.ApplyModifiedProperties();
+                        inputProperty.serializedObject.Update();
+
+                        changed();
+                    }); 
+            });
 
             return root;
         }
@@ -380,26 +564,26 @@ namespace Armoury.UI.Markers.Editor
                 }
             };
             
-            container.AddToClassList("input-bindings-collection__header");
-            
-            foreach (var badge in badges)
-            {
-                container.Add(badge);
-            }
-            
             container.Add(new Label(title)
             {
                 style =
                 {
                     color = Color.whiteSmoke,
                     unityFontStyleAndWeight = FontStyle.Bold,
-                    marginLeft = badges.Length > 0 ? 6 : 0,
+                    marginRight = 6,
                     textOverflow = TextOverflow.Ellipsis,
                     overflow =  Overflow.Hidden,
                     flexShrink = 1,
                     flexGrow = 0,
                 }
             });
+            
+            container.AddToClassList("input-bindings-collection__header");
+            
+            foreach (var badge in badges)
+            {
+                container.Add(badge);
+            }
 
             return container;
         }
@@ -524,6 +708,510 @@ namespace Armoury.UI.Markers.Editor
             }
 
             return null;
+        }
+    }
+    
+    public sealed class ParentBindingPathWindow : EditorWindow
+    {
+        private Type _dataSourceType;
+        private InputValueKind? _expectedKind;
+
+        private Action<Type> _onDataSourceTypeSelected;
+        private Action<Type, ParentBindingDescriptor> _onBindingSelected;
+
+        private readonly List<TypeChoice> _typeChoices = new();
+        private readonly List<Entry> _allEntries = new();
+        private readonly List<Entry> _filteredEntries = new();
+
+        private PopupField<TypeChoice> _typeField;
+        private TextField _searchField;
+        private ListView _listView;
+        private HelpBox _helpBox;
+        private Button _bindButton;
+
+        public static void Open(
+            Type dataSourceType,
+            InputValueKind? expectedKind,
+            Action<Type> onDataSourceTypeSelected,
+            Action<Type, ParentBindingDescriptor> onBindingSelected)
+        {
+            var window = CreateInstance<ParentBindingPathWindow>();
+
+            window._dataSourceType = dataSourceType;
+            window._expectedKind = expectedKind;
+            window._onDataSourceTypeSelected = onDataSourceTypeSelected;
+            window._onBindingSelected = onBindingSelected;
+
+            window.titleContent = new GUIContent("Add Binding");
+            window.minSize = new Vector2(460, 460);
+            window.position = GetCenteredPosition(460, 460);
+
+            window.ShowUtility();
+            window.Focus();
+        }
+
+        private static Rect GetCenteredPosition(float width, float height)
+        {
+            var main = EditorGUIUtility.GetMainWindowPosition();
+
+            return new Rect(
+                main.x + (main.width - width) * 0.5f,
+                main.y + (main.height - height) * 0.5f,
+                width,
+                height
+            );
+        }
+
+        private void CreateGUI()
+        {
+            rootVisualElement.style.paddingLeft = 8;
+            rootVisualElement.style.paddingRight = 8;
+            rootVisualElement.style.paddingTop = 8;
+            rootVisualElement.style.paddingBottom = 8;
+
+            BuildTypeChoices();
+
+            _typeField = new PopupField<TypeChoice>(
+                label: "Parent Source Type",
+                choices: _typeChoices,
+                defaultIndex: GetCurrentTypeChoiceIndex(),
+                formatSelectedValueCallback: FormatTypeChoice,
+                formatListItemCallback: FormatTypeChoice
+            );
+
+            _typeField.RegisterValueChangedCallback(evt =>
+            {
+                var selectedType = evt.newValue?.Type;
+
+                _dataSourceType = selectedType;
+
+                if (_dataSourceType != null)
+                    _onDataSourceTypeSelected?.Invoke(_dataSourceType);
+
+                RebuildEntries();
+            });
+
+            rootVisualElement.Add(_typeField);
+
+            _helpBox = new HelpBox("", HelpBoxMessageType.Info)
+            {
+                style =
+                {
+                    marginTop = 6,
+                    marginBottom = 6
+                }
+            };
+
+            rootVisualElement.Add(_helpBox);
+
+            _searchField = new TextField("Search")
+            {
+                isDelayed = false
+            };
+
+            _searchField.RegisterValueChangedCallback(evt => ApplyFilter(evt.newValue));
+            rootVisualElement.Add(_searchField);
+
+            _listView = new ListView
+            {
+                itemsSource = _filteredEntries,
+                selectionType = SelectionType.Single,
+                fixedItemHeight = 26,
+                makeItem = MakeRow,
+                bindItem = BindRow,
+                style =
+                {
+                    flexGrow = 1,
+                    marginTop = 8,
+                    marginBottom = 8
+                }
+            };
+
+            _listView.itemsChosen += chosen =>
+            {
+                var entry = chosen.OfType<Entry>().FirstOrDefault();
+                Choose(entry);
+            };
+
+            _listView.selectionChanged += _ =>
+            {
+                UpdateBindButtonState();
+            };
+
+            rootVisualElement.Add(_listView);
+
+            var footer = new VisualElement
+            {
+                style =
+                {
+                    flexDirection = FlexDirection.Row,
+                    justifyContent = Justify.FlexEnd
+                }
+            };
+
+            footer.Add(new Button(Close)
+            {
+                text = "Cancel"
+            });
+
+            _bindButton = new Button(() =>
+            {
+                Choose(_listView.selectedItem as Entry);
+            })
+            {
+                text = "Bind"
+            };
+
+            footer.Add(_bindButton);
+            rootVisualElement.Add(footer);
+
+            RebuildEntries();
+
+            if (_dataSourceType == null)
+                _typeField.Focus();
+            else
+                _searchField.Focus();
+        }
+
+        private void BuildTypeChoices()
+        {
+            _typeChoices.Clear();
+
+            _typeChoices.Add(new TypeChoice(
+                type: null,
+                label: "Select parent source type.."
+            ));
+
+            var registeredTypes = ParentBindingRegistry.GetRegisteredTypes();
+
+            foreach (var type in registeredTypes)
+            {
+                _typeChoices.Add(new TypeChoice(
+                    type,
+                    GetNiceTypeName(type)
+                ));
+            }
+
+            if (_dataSourceType != null && !registeredTypes.Contains(_dataSourceType))
+            {
+                _typeChoices.Add(new TypeChoice(
+                    _dataSourceType,
+                    $"{GetNiceTypeName(_dataSourceType)} (not registered)"
+                ));
+            }
+        }
+
+        private int GetCurrentTypeChoiceIndex()
+        {
+            if (_dataSourceType == null)
+                return 0;
+
+            for (var i = 0; i < _typeChoices.Count; i++)
+            {
+                if (_typeChoices[i].Type == _dataSourceType)
+                    return i;
+            }
+
+            return 0;
+        }
+
+        private static string FormatTypeChoice(TypeChoice choice)
+        {
+            return choice?.Label ?? "Select parent source type..";
+        }
+
+        private void RebuildEntries()
+        {
+            _allEntries.Clear();
+            _filteredEntries.Clear();
+
+            if (_dataSourceType != null)
+            {
+                var descriptors = ParentBindingRegistry.Get(_dataSourceType);
+
+                foreach (var descriptor in descriptors)
+                    _allEntries.Add(new Entry(descriptor));
+
+                _allEntries.Sort(static (a, b) =>
+                    string.Compare(a.Descriptor.Path, b.Descriptor.Path, StringComparison.Ordinal));
+            }
+
+            ApplyFilter(_searchField?.value ?? "");
+            UpdateState();
+        }
+
+        private void ApplyFilter(string search)
+        {
+            _filteredEntries.Clear();
+
+            search = search?.Trim() ?? "";
+
+            foreach (var entry in _allEntries)
+            {
+                var descriptor = entry.Descriptor;
+
+                if (!IsCompatible(descriptor))
+                    continue;
+
+                if (search.Length > 0 &&
+                    descriptor.Path.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0 &&
+                    GetNiceTypeName(descriptor.ValueType).IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0 &&
+                    descriptor.Kind.ToString().IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    continue;
+                }
+
+                _filteredEntries.Add(entry);
+            }
+
+            _listView?.RefreshItems();
+            UpdateState();
+        }
+
+        private bool IsCompatible(ParentBindingDescriptor descriptor)
+        {
+            if (!_expectedKind.HasValue)
+                return true;
+
+            if (_expectedKind.Value == InputValueKind.None)
+                return true;
+
+            return descriptor.Kind == _expectedKind.Value;
+        }
+
+        private void UpdateState()
+        {
+            var hasType = _dataSourceType != null;
+            var hasRegisteredTypes = ParentBindingRegistry.GetRegisteredTypes().Length > 0;
+            var hasEntries = _filteredEntries.Count > 0;
+
+            _searchField?.SetEnabled(hasType);
+            _listView?.SetEnabled(hasType && hasEntries);
+
+            if (_helpBox != null)
+            {
+                if (!hasRegisteredTypes)
+                {
+                    _helpBox.text =
+                        "No parent binding source types are registered. Register descriptors with ParentBindingRegistry.Register(...) first.";
+                    _helpBox.messageType = HelpBoxMessageType.Warning;
+                    _helpBox.style.display = DisplayStyle.Flex;
+                }
+                else if (!hasType)
+                {
+                    _helpBox.text =
+                        "Select the parent dataSourceType before choosing a binding property.";
+                    _helpBox.messageType = HelpBoxMessageType.Info;
+                    _helpBox.style.display = DisplayStyle.Flex;
+                }
+                else if (!ParentBindingRegistry.IsRegistered(_dataSourceType))
+                {
+                    _helpBox.text =
+                        $"'{_dataSourceType.FullName}' is not registered in ParentBindingRegistry.";
+                    _helpBox.messageType = HelpBoxMessageType.Warning;
+                    _helpBox.style.display = DisplayStyle.Flex;
+                }
+                else if (!hasEntries)
+                {
+                    _helpBox.text =
+                        "No compatible parent bindings were found for this input kind.";
+                    _helpBox.messageType = HelpBoxMessageType.Info;
+                    _helpBox.style.display = DisplayStyle.Flex;
+                }
+                else
+                {
+                    _helpBox.style.display = DisplayStyle.None;
+                }
+            }
+
+            UpdateBindButtonState();
+        }
+
+        private void UpdateBindButtonState()
+        {
+            if (_bindButton == null)
+                return;
+
+            _bindButton.SetEnabled(
+                _dataSourceType != null &&
+                _listView?.selectedItem is Entry
+            );
+        }
+
+        private static VisualElement MakeRow()
+        {
+            var row = new VisualElement
+            {
+                style =
+                {
+                    flexDirection = FlexDirection.Row,
+                    alignItems = Align.Center,
+                    paddingLeft = 4,
+                    paddingRight = 4
+                }
+            };
+
+            row.Add(new Label
+            {
+                name = "Path",
+                style =
+                {
+                    flexGrow = 1,
+                    unityTextAlign = TextAnchor.MiddleLeft
+                }
+            });
+
+            row.Add(new Label
+            {
+                name = "Kind",
+                style =
+                {
+                    width = 80,
+                    opacity = 0.75f,
+                    unityTextAlign = TextAnchor.MiddleRight
+                }
+            });
+
+            row.Add(new Label
+            {
+                name = "Type",
+                style =
+                {
+                    width = 100,
+                    opacity = 0.65f,
+                    unityTextAlign = TextAnchor.MiddleRight
+                }
+            });
+
+            return row;
+        }
+
+        private void BindRow(VisualElement row, int index)
+        {
+            var descriptor = _filteredEntries[index].Descriptor;
+
+            row.Q<Label>("Path").text = descriptor.Path;
+            row.Q<Label>("Kind").text = descriptor.Kind.ToString();
+            row.Q<Label>("Type").text = GetNiceTypeName(descriptor.ValueType);
+        }
+
+        private void Choose(Entry entry)
+        {
+            if (entry == null)
+                return;
+
+            if (_dataSourceType == null)
+                return;
+
+            _onBindingSelected?.Invoke(_dataSourceType, entry.Descriptor);
+            Close();
+        }
+
+        private static string GetNiceTypeName(Type type)
+        {
+            if (type == null)
+                return "";
+
+            type = Nullable.GetUnderlyingType(type) ?? type;
+
+            if (type == typeof(string)) return "string";
+            if (type == typeof(bool)) return "bool";
+            if (type == typeof(int)) return "int";
+            if (type == typeof(float)) return "float";
+            if (type == typeof(double)) return "double";
+            if (type == typeof(long)) return "long";
+            if (type == typeof(ulong)) return "ulong";
+
+            return type.Name;
+        }
+
+        private sealed class TypeChoice
+        {
+            public readonly Type Type;
+            public readonly string Label;
+
+            public TypeChoice(Type type, string label)
+            {
+                Type = type;
+                Label = label;
+            }
+        }
+
+        private sealed class Entry
+        {
+            public readonly ParentBindingDescriptor Descriptor;
+
+            public Entry(ParentBindingDescriptor descriptor)
+            {
+                Descriptor = descriptor;
+            }
+        }
+    }
+    
+    internal static class SerializedTypeUtility
+    {
+        internal static Type GetTypeValue(SerializedProperty property)
+        {
+            if (property == null)
+                return null;
+
+            // Type stored as System.Type
+            if (property.propertyType != SerializedPropertyType.String)
+            {
+                try
+                {
+                    if (property.boxedValue is Type boxedType)
+                        return boxedType;
+                }
+                catch
+                {
+                    // Fall through
+                }
+
+                if (property.propertyType == SerializedPropertyType.ManagedReference)
+                    return property.managedReferenceValue as Type;
+            }
+
+            // Type stored as text
+            if (property.propertyType == SerializedPropertyType.String)
+            {
+                var value = property.stringValue;
+
+                if (string.IsNullOrWhiteSpace(value))
+                    return null;
+
+                return Type.GetType(value);
+            }
+
+            return null;
+        }
+
+        internal static void SetTypeValue(SerializedProperty property, Type type)
+        {
+            if (property == null)
+                return;
+
+            if (property.propertyType == SerializedPropertyType.String)
+            {
+                property.stringValue = type == null
+                    ? string.Empty
+                    : $"{type.FullName}, {type.Assembly.GetName().Name}";
+
+                return;
+            }
+
+            try
+            {
+                property.boxedValue = type;
+                return;
+            }
+            catch
+            {
+                // Fall through
+            }
+
+            if (property.propertyType == SerializedPropertyType.ManagedReference)
+                property.managedReferenceValue = type;
         }
     }
 }

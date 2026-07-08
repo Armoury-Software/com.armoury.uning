@@ -212,21 +212,18 @@ namespace Armoury.UI.Markers
             InputAssignment[] output
         )
         {
-            if (definition == null)
-                return 0;
-
-            // if (definition.Inputs == null)
-            //    return 0;
+            if (definition?.Inputs == null)
+               return 0;
 
             var count = 0;
 
-            /*for (var i = 0; i < definition.InputCount; i++)
+            for (var i = 0; i < definition.Inputs.Count; i++)
             {
                 var binding = definition.Inputs[i];
 
                 InputValue value;
 
-                if (binding.Source == ComponentInputValueSource.Literal)
+                if (binding.Source == InputValueSource.Literal)
                 {
                     value = binding.LiteralValue.ToInputValue();
                 }
@@ -242,7 +239,7 @@ namespace Armoury.UI.Markers
                     binding.InputId,
                     in value
                 );
-            }*/
+            }
 
             return count;
         }
@@ -387,7 +384,7 @@ namespace Armoury.UI.Markers
     
     public static class ParentBindingRegistry
     {
-        private static readonly System.Collections.Generic.Dictionary<System.Type, ParentBindingDescriptor[]> BindingsByType = new();
+        private static readonly Dictionary<System.Type, ParentBindingDescriptor[]> BindingsByType = new();
 
         private static readonly ParentBindingDescriptor[] Empty =
             System.Array.Empty<ParentBindingDescriptor>();
@@ -411,6 +408,25 @@ namespace Armoury.UI.Markers
             return BindingsByType.TryGetValue(parentType, out var descriptors)
                 ? descriptors
                 : Empty;
+        }
+
+        public static System.Type[] GetRegisteredTypes()
+        {
+            if (BindingsByType.Count == 0)
+                return System.Array.Empty<System.Type>();
+
+            var types = new System.Type[BindingsByType.Count];
+            BindingsByType.Keys.CopyTo(types, 0);
+
+            System.Array.Sort(types, static (a, b) =>
+                string.Compare(a.FullName, b.FullName, System.StringComparison.Ordinal));
+
+            return types;
+        }
+
+        public static bool IsRegistered(System.Type parentType)
+        {
+            return parentType != null && BindingsByType.ContainsKey(parentType);
         }
     }
 }

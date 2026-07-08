@@ -3,6 +3,7 @@ using Armoury.UI.Injectors;
 using Armoury.UI.Markers;
 using Armoury.UI.Markers.Elemental;
 using Armoury.UI.Markers.Structural;
+using Unity.Properties;
 using UnityEngine;
 
 namespace Armoury.UI
@@ -158,11 +159,6 @@ namespace Armoury.UI
         private void Scaffold(VisualElement root)
         {
             Debug.Log($"[ViewContainerRef (Scaffold):] Scaffold has been called for ({root.GetType().Name} {root.name})");
-            
-            if (root == null)
-            {
-                return;
-            }
 
             ViewContainerRef rootLevelInstance = null;
 
@@ -311,15 +307,7 @@ namespace Armoury.UI
             if (marker.Component?.Inputs != null)
             {
                 inputs = new InputAssignment[marker.Component.Inputs.Count];
-                for (var i = 0; i < marker.Component.Inputs.Count; i++)
-                {
-                    var binding = marker.Component.Inputs[i];
-
-                    if (binding.Source == InputValueSource.Literal)
-                    {
-                        inputs[i] = new InputAssignment(binding.InputId, binding.LiteralValue.ToInputValue());
-                    }
-                }
+                ComponentInputCompiler.Compile(marker.Component, marker.GetHierarchicalDataSourceContext().dataSource, inputs);
             }
 
             var parent = marker.parent;
