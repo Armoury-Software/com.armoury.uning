@@ -67,9 +67,11 @@ namespace Armoury.UI.Injectors
                 case true when provider.TypeToken != null:
                     _typeTokenProviders[provider.TypeToken] = provider;
                     break;
-                case true when !string.IsNullOrEmpty(provider.StringToken):
+
+                case false when !string.IsNullOrEmpty(provider.StringToken):
                     _stringTokenProviders[provider.StringToken] = provider;
                     break;
+
                 default:
                     Debug.LogError("Can't find a proper token value for injection");
                     break;

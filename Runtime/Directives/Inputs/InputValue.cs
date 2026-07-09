@@ -46,6 +46,9 @@ namespace Armoury.UI
 
         public static InputValue FromObject<T>(T value) where T : class
             => new(InputValueKind.Object, false, 0, 0f, 0d, value);
+        
+        public static InputValue FromValue<T>(T value)
+            => new(InputValueKind.Value, false, 0, 0f, 0d, value);
 
         public bool AsBool()
         {
@@ -101,6 +104,27 @@ namespace Armoury.UI
             }
 
             return value;
+        }
+        
+        public T AsValue<T>()
+        {
+            if (_kind != InputValueKind.Value)
+                ThrowInvalidCast(InputValueKind.Value);
+
+            if (_object == null)
+            {
+                if (default(T) is null)
+                    return default;
+
+                throw new InvalidOperationException(
+                    $"Input value is null, not '{typeof(T).FullName}'.");
+            }
+
+            if (_object is T value)
+                return value;
+
+            throw new InvalidOperationException(
+                $"Input value is of type '{_object.GetType().FullName}', not '{typeof(T).FullName}'.");
         }
 
         private void ThrowInvalidCast(InputValueKind expected)

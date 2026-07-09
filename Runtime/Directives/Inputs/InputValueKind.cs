@@ -8,6 +8,7 @@
         Float,
         Double,
         String,
-        Object
+        Object,
+        Value
     }
 }

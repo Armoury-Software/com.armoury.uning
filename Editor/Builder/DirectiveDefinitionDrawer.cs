@@ -143,7 +143,8 @@ namespace Armoury.UI.Markers.Editor
 
             var valueField = inputSource == InputValueSource.ParentBinding
                 ? DrawBindingField(
-                    descriptor.Kind, 
+                    descriptor.Kind,
+                    descriptor.ValueType,
                     definitionProperty, 
                     inputProperty, 
                     () => RebuildSingleInput(
@@ -283,6 +284,9 @@ namespace Armoury.UI.Markers.Editor
             var inputNameValue = inputProperty.FindPropertyRelative(nameof(InputBinding.InputName)).stringValue;
             var literalValueProperty = inputProperty.FindPropertyRelative(nameof(InputBinding.LiteralValue));
             var actualValueProperty = literalValueProperty.FindPropertyRelative(nameof(ObjectInputValueDefinition.Value));
+
+            if (kind == InputValueKind.Value)
+                return new Label(inputNameValue) { style = { flexGrow = 1 } };
             
             var valueField = new PropertyField(actualValueProperty) { label = inputNameValue, style = { flexGrow = 1 } };
             valueField.BindProperty(actualValueProperty);
@@ -292,6 +296,7 @@ namespace Armoury.UI.Markers.Editor
         
         private static VisualElement DrawBindingField(
             InputValueKind kind,
+            Type expectedValueType,
             SerializedProperty definitionProperty,
             SerializedProperty inputProperty,
             Action changed
@@ -356,6 +361,7 @@ namespace Armoury.UI.Markers.Editor
             {
                 ParentBindingPathWindow.Open(
                     dataSourceType: parentType,
+                    expectedValueType: expectedValueType,
                     expectedKind: descriptorKind,
                     onDataSourceTypeSelected: selectedType =>
                     {
@@ -447,6 +453,7 @@ namespace Armoury.UI.Markers.Editor
                         InputValueKind.Double => typeof(DoubleInputValueDefinition),
                         InputValueKind.String => typeof(StringInputValueDefinition),
                         InputValueKind.Object => typeof(ObjectInputValueDefinition),
+                        InputValueKind.Value => typeof(ValueInputValueDefinition),
                         _ => throw new Exception($"Unhandled descriptor.Kind {descriptor.Kind}")
                     });
 
@@ -726,6 +733,7 @@ namespace Armoury.UI.Markers.Editor
     {
         private Type _dataSourceType;
         private InputValueKind? _expectedKind;
+        private Type _expectedValueType;
 
         private Action<Type> _onDataSourceTypeSelected;
         private Action<Type, ParentBindingDescriptor> _onBindingSelected;
@@ -743,6 +751,7 @@ namespace Armoury.UI.Markers.Editor
         public static void Open(
             Type dataSourceType,
             InputValueKind? expectedKind,
+            Type expectedValueType,
             Action<Type> onDataSourceTypeSelected,
             Action<Type, ParentBindingDescriptor> onBindingSelected)
         {
@@ -750,12 +759,13 @@ namespace Armoury.UI.Markers.Editor
 
             window._dataSourceType = dataSourceType;
             window._expectedKind = expectedKind;
+            window._expectedValueType = expectedValueType;
             window._onDataSourceTypeSelected = onDataSourceTypeSelected;
             window._onBindingSelected = onBindingSelected;
 
             window.titleContent = new GUIContent("Add Binding");
-            window.minSize = new Vector2(460, 460);
-            window.position = GetCenteredPosition(460, 460);
+            window.minSize = new Vector2(520, 460);
+            window.position = GetCenteredPosition(520, 460);
 
             window.ShowUtility();
             window.Focus();
@@ -987,7 +997,30 @@ namespace Armoury.UI.Markers.Editor
             if (_expectedKind.Value == InputValueKind.None)
                 return true;
 
-            return descriptor.Kind == _expectedKind.Value;
+            if (descriptor.Kind != _expectedKind.Value)
+                return false;
+
+            if (_expectedValueType == null)
+                return true;
+
+            if (descriptor.ValueType == null)
+                return false;
+
+            return IsTypeCompatible(
+                expectedType: _expectedValueType,
+                actualType: descriptor.ValueType
+            );
+        }
+        
+        private static bool IsTypeCompatible(Type expectedType, Type actualType)
+        {
+            expectedType = Nullable.GetUnderlyingType(expectedType) ?? expectedType;
+            actualType = Nullable.GetUnderlyingType(actualType) ?? actualType;
+
+            if (expectedType == actualType)
+                return true;
+
+            return expectedType.IsAssignableFrom(actualType);
         }
 
         private void UpdateState()
@@ -1025,7 +1058,10 @@ namespace Armoury.UI.Markers.Editor
                 else if (!hasEntries)
                 {
                     _helpBox.text =
-                        "No compatible parent bindings were found for this input kind.";
+                        _expectedValueType != null
+                            ? $"No compatible parent bindings were found for input type '{GetNiceTypeName(_expectedValueType)}'."
+                            : "No compatible parent bindings were found for this input kind.";
+                    
                     _helpBox.messageType = HelpBoxMessageType.Info;
                     _helpBox.style.display = DisplayStyle.Flex;
                 }

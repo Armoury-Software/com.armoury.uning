@@ -25,6 +25,17 @@ namespace Armoury.UniNg.CodeGen
             DiagnosticSeverity.Error,
             isEnabledByDefault: true
         );
+        
+        private static readonly DiagnosticDescriptor MissingIEquatableWarning = new(
+            id: "UNINGGEN002",
+            title: "Value input should implement IEquatable<T>",
+            messageFormat:
+                "Input '{0}' uses custom value type '{1}', but '{1}' does not implement IEquatable<{1}>. " +
+                "Generated equality checks may be slower or use less precise equality semantics.",
+            category: "UniNg",
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true
+        );
 
         private const string RootNameSpace = "Armoury.UI";
         private const string ComponentBaseMetadataName = "Armoury.UI.Component";
@@ -37,6 +48,35 @@ namespace Armoury.UniNg.CodeGen
 
         public void Execute(GeneratorExecutionContext context)
         {
+            try
+            {
+                ExecuteCore(context);
+            }
+            catch (Exception ex)
+            {
+                FileLog(context, "GENERATOR FATAL ERROR:");
+                FileLog(context, ex.ToString());
+
+                context.ReportDiagnostic(Diagnostic.Create(
+                    new DiagnosticDescriptor(
+                        id: "UNINGGEN_FATAL",
+                        title: "UniNg generator failed",
+                        messageFormat: "UniNg generator failed: {0}",
+                        category: "UniNg",
+                        DiagnosticSeverity.Error,
+                        isEnabledByDefault: true
+                    ),
+                    Location.None,
+                    ex.ToString()
+                ));
+            }
+        }
+
+        public void ExecuteCore(GeneratorExecutionContext context)
+        {
+            FileLog(context, $"Process: {Process.GetCurrentProcess().ProcessName}");
+            FileLog(context, $"Compilation assembly: {context.Compilation.AssemblyName}");
+            
             if (context.SyntaxReceiver is not Receiver receiver)
                 return;
             
@@ -55,7 +95,7 @@ namespace Armoury.UniNg.CodeGen
 
             if (unityObjectSymbol == null)
             {
-                ReportError(context, "Could not resolve UnityEngine.Object.");
+                ReportError(context, "Could not resolve UnityEngine.Object!");
                 return;
             }
 
@@ -64,25 +104,39 @@ namespace Armoury.UniNg.CodeGen
                 var semanticModel = context.Compilation.GetSemanticModel(classDeclaration.SyntaxTree);
 
                 if (semanticModel.GetDeclaredSymbol(classDeclaration) is not INamedTypeSymbol classSymbol)
+                {
+                    FileLog(context, "Ignoring, because it's not an INamedTypeSymbol");
                     continue;
+                }
 
                 if (classSymbol.IsAbstract)
+                {
+                    FileLog(context, $"Ignoring {classSymbol.Name}, because it's abstract");
                     continue;
+                }
 
                 if (classSymbol.TypeKind != TypeKind.Class)
+                {
+                    FileLog(context, $"Ignoring {classSymbol.Name}, because it's not a class");
                     continue;
+                }
 
                 if (!InheritsFrom(classSymbol, componentBaseSymbol))
+                {
+                    FileLog(context, $"Ignoring {classSymbol.Name}, because it doesn't inherit from Component");
                     continue;
+                }
 
                 if (!IsPartial(classDeclaration))
                 {
+                    FileLog(context, $"Ignoring {classSymbol.Name}, because it's not a partial class");
                     // TODO: Add diagnostic
                     continue;
                 }
 
                 if (classSymbol.TypeParameters.Length > 0)
                 {
+                    FileLog(context, $"Ignoring {classSymbol.Name}, because it has type parameters");
                     // TODO: Add diagnostic
                     continue;
                 }
@@ -92,8 +146,12 @@ namespace Armoury.UniNg.CodeGen
 
                 try
                 {
+                    FileLog(context, $"Found component: {classSymbol.ToDisplayString()}");
+                    FileLog(context, $"Containing assembly: {classSymbol.ContainingAssembly.Name}");
+                    FileLog(context, $"Compilation assembly: {context.Compilation.AssemblyName}");
                     context.AddSource(hintName, SourceText.From(source, Encoding.UTF8));
                     FileLog(context, $"AddSource OK: {hintName}");
+                    // FileLog(context, source);
                 }
                 catch (Exception ex)
                 {
@@ -169,8 +227,8 @@ namespace Armoury.UniNg.CodeGen
                 return string.Empty;
             }
             
-            var inputs = GetMembersByAttribute(componentSymbol, inputAttributeSymbol);
-            var parentBindings = GetMembersByAttribute(componentSymbol, bindingAttributeSymbol);
+            var inputs = GetMembersByAttribute(context, unityObjectSymbol, componentSymbol, inputAttributeSymbol);
+            var parentBindings = GetMembersByAttribute(context, unityObjectSymbol, componentSymbol, bindingAttributeSymbol);
 
             var source = $$"""
                 // <auto-generated />
@@ -268,7 +326,7 @@ namespace Armoury.UniNg.CodeGen
                 return $"case __InputId.{input.Name}:\n" +
                    Indent($$"""
                      var newValue = value.As{{accessorName}}();
-                     if ({{input.Name}} != newValue)
+                     if ({{$"!global::System.Collections.Generic.EqualityComparer<{input.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}>.Default.Equals({input.Name}, newValue)"}})
                      {
                          {{input.Name}} = newValue;
                          changed.Mark(__InputIndex.{{input.Name}});
@@ -360,7 +418,7 @@ namespace Armoury.UniNg.CodeGen
                                     {{
                                         string.Join("\n", inputs.Select((input, index) => Indent(
                                             GenerateSingleInputDescriptor(
-                                                index, in input, componentSymbol, inputAttributeSymbol), 
+                                                index, in input, componentSymbol, inputAttributeSymbol, unityObjectSymbol), 
                                             "    ")))
                                     }}
                                     }
@@ -373,7 +431,8 @@ namespace Armoury.UniNg.CodeGen
                 int index,
                 in InputMember input,
                 INamedTypeSymbol componentSymbol,
-                INamedTypeSymbol inputAttributeSymbol
+                INamedTypeSymbol inputAttributeSymbol,
+                INamedTypeSymbol unityObjectSymbol
             )
             {
                 return $"new InputDescriptor(\n" +
@@ -384,14 +443,8 @@ namespace Armoury.UniNg.CodeGen
                                 alias: "{{ToCamelCase(input.Name)}}",
                                 valueType: typeof({{input.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}}),
                                 kind: InputValueKind.{{
-                                    input.Type.SpecialType switch {
-                                        SpecialType.System_String => "String",
-                                        SpecialType.System_Double => "Double",
-                                        SpecialType.System_Int32 => "Int",
-                                        SpecialType.System_Boolean => "Bool",
-                                        SpecialType.System_Single => "Float",
-                                        _ => "Object"
-                                }}}),
+                                    GetInputValueKindName(input.Type, unityObjectSymbol)
+                                }}),
                                 """, "                        ");
             }
         }
@@ -416,7 +469,7 @@ namespace Armoury.UniNg.CodeGen
                                     {{
                                         string.Join("\n", parentBindings.Select((parentBinding, index) => Indent(
                                             GenerateSingleBindingDescriptor(
-                                                index, in parentBinding, componentSymbol, bindingAttributeSymbol), 
+                                                index, in parentBinding, componentSymbol, bindingAttributeSymbol, unityObjectSymbol), 
                                             "    ")))
                                     }}
                                     }
@@ -429,7 +482,8 @@ namespace Armoury.UniNg.CodeGen
                 int index,
                 in InputMember parentBinding,
                 INamedTypeSymbol componentSymbol,
-                INamedTypeSymbol bindingAttributeSymbol
+                INamedTypeSymbol bindingAttributeSymbol,
+                INamedTypeSymbol unityObjectSymbol
             )
             {
                 return $"new ParentBindingDescriptor(\n" +
@@ -438,14 +492,8 @@ namespace Armoury.UniNg.CodeGen
                             path: "{{parentBinding.Name}}",
                             valueType: typeof({{parentBinding.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}}),
                             kind: InputValueKind.{{
-                                parentBinding.Type.SpecialType switch {
-                                    SpecialType.System_String => "String",
-                                    SpecialType.System_Double => "Double",
-                                    SpecialType.System_Int32 => "Int",
-                                    SpecialType.System_Boolean => "Bool",
-                                    SpecialType.System_Single => "Float",
-                                    _ => "Object"
-                                }}}),
+                                GetInputValueKindName(parentBinding.Type, unityObjectSymbol)
+                                }}),
                             """, "                            ");
             }
         }
@@ -501,6 +549,8 @@ namespace Armoury.UniNg.CodeGen
         }
         
         private static IReadOnlyList<InputMember> GetMembersByAttribute(
+            GeneratorExecutionContext context,
+            INamedTypeSymbol unityObjectSymbol,
             INamedTypeSymbol componentSymbol,
             INamedTypeSymbol attributeSymbol)
         {
@@ -526,6 +576,13 @@ namespace Armoury.UniNg.CodeGen
                                 location: field.Locations.FirstOrDefault()
                             )
                         );
+                        
+                        ReportMissingIEquatableWarningIfNeeded(
+                            context,
+                            field,
+                            field.Type,
+                            unityObjectSymbol
+                        );
 
                         break;
                     }
@@ -548,6 +605,13 @@ namespace Armoury.UniNg.CodeGen
                                 name: property.Name,
                                 location: property.Locations.FirstOrDefault()
                             )
+                        );
+                        
+                        ReportMissingIEquatableWarningIfNeeded(
+                            context,
+                            property,
+                            property.Type,
+                            unityObjectSymbol
                         );
 
                         break;
@@ -673,9 +737,35 @@ namespace Armoury.UniNg.CodeGen
                 SpecialType.System_Boolean => "Bool",
                 SpecialType.System_Single => "Float",
 
-                _ => throw new NotSupportedException(
-                    $"Unsupported input type: {type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}"
-                )
+                _ => $"Value<{type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}>"
+            };
+        }
+        
+        private static string GetInputValueKindName(
+            ITypeSymbol type,
+            INamedTypeSymbol unityObjectSymbol)
+        {
+            if (type == null)
+                throw new ArgumentNullException(nameof(type));
+
+            if (unityObjectSymbol == null)
+                throw new ArgumentNullException(nameof(unityObjectSymbol));
+
+            type = UnwrapNullable(type);
+
+            if (InheritsFromOrIs(type, unityObjectSymbol))
+                return "Object";
+
+            return type.SpecialType switch
+            {
+                SpecialType.System_String => "String",
+                SpecialType.System_Double => "Double",
+                SpecialType.System_Int32 => "Int",
+                SpecialType.System_Boolean => "Bool",
+                SpecialType.System_Single => "Float",
+
+                // Custom structs/classes
+                _ => "Value"
             };
         }
         
@@ -761,6 +851,81 @@ namespace Armoury.UniNg.CodeGen
                 Message = message;
                 Location = location;
             }
+        }
+        
+        private static void ReportMissingIEquatableWarningIfNeeded(
+            GeneratorExecutionContext context,
+            ISymbol memberSymbol,
+            ITypeSymbol inputType,
+            INamedTypeSymbol unityObjectSymbol)
+        {
+            inputType = UnwrapNullable(inputType);
+
+            // Primitives/string should not warn.
+            if (IsBuiltInInputType(inputType))
+                return;
+
+            // UnityEngine.Object-derived inputs should not warn.
+            if (InheritsFromOrIs(inputType, unityObjectSymbol))
+                return;
+
+            // Only warn for normal custom structs/classes.
+            if (inputType.TypeKind is not (TypeKind.Struct or TypeKind.Class))
+                return;
+
+            if (ImplementsIEquatableOfSelf(inputType, context.Compilation))
+                return;
+
+            var typeName = inputType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+            context.ReportDiagnostic(Diagnostic.Create(
+                MissingIEquatableWarning,
+                memberSymbol.Locations.FirstOrDefault(),
+                memberSymbol.Name,
+                typeName
+            ));
+        }
+        
+        private static bool IsBuiltInInputType(ITypeSymbol type)
+        {
+            return type.SpecialType is
+                SpecialType.System_String or
+                SpecialType.System_Double or
+                SpecialType.System_Int32 or
+                SpecialType.System_Boolean or
+                SpecialType.System_Single;
+        }
+
+        private static bool ImplementsIEquatableOfSelf(
+            ITypeSymbol type,
+            Compilation compilation)
+        {
+            var equatableSymbol = compilation.GetTypeByMetadataName("System.IEquatable`1");
+
+            if (equatableSymbol == null)
+                return false;
+
+            foreach (var interfaceSymbol in type.AllInterfaces)
+            {
+                if (!SymbolEqualityComparer.Default.Equals(
+                        interfaceSymbol.OriginalDefinition,
+                        equatableSymbol))
+                {
+                    continue;
+                }
+
+                if (interfaceSymbol.TypeArguments.Length != 1)
+                    continue;
+
+                if (SymbolEqualityComparer.Default.Equals(
+                        interfaceSymbol.TypeArguments[0],
+                        type))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
     

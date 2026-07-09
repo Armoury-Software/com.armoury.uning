@@ -27,7 +27,6 @@ namespace Armoury.UI
         
         protected Directive(Injector injector) : base(injector) { }
         
-        
         private void NotifyChange([CallerMemberName] string propertyName = "")
         {
             propertyChanged?.Invoke(
@@ -37,7 +36,7 @@ namespace Armoury.UI
         }
         
         protected virtual void OnInputsChanged(InputChangeMask changed) { }
-
+        
         internal void __UniNgOnInputsChanged(InputChangeMask changed)
         {
             OnInputsChanged(changed);

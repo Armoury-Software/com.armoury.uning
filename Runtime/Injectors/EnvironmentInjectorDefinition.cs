@@ -22,7 +22,7 @@ namespace Armoury.UI.Injectors
 
                 if (provider == null)
                     continue;
-
+                
                 provider.InjectInto(injector);
             }
         }

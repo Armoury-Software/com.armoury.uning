@@ -125,6 +125,7 @@ namespace Armoury.UI.Markers
                 InputValueKind.Double => new DoubleInputValueDefinition(),
                 InputValueKind.String => new StringInputValueDefinition(),
                 InputValueKind.Object => new ObjectInputValueDefinition(),
+                InputValueKind.Value => new ValueInputValueDefinition(),
                 _ => null
             };
     }
@@ -204,6 +205,19 @@ namespace Armoury.UI.Markers
         public override InputValue ToInputValue()
         {
             return InputValue.FromObject(Value);
+        }
+    }
+    
+    [System.Serializable]
+    [UxmlObject]
+    public sealed partial class ValueInputValueDefinition : InputValueDefinition
+    {
+        // [UxmlAttribute("value")]
+        public object Value { get; set; }
+
+        public override InputValue ToInputValue()
+        {
+            return InputValue.FromValue(Value);
         }
     }
     
