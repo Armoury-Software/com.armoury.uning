@@ -119,10 +119,10 @@ namespace Armoury.UI.Markers.Structural
                 {
                     var instance = ComponentMarker.Instantiate(in definition);
                     
-                    instance.dataSource = new NgForItemContext(
+                    /*instance.dataSource = new NgForItemContext(
                         item: item,
                         index: index
-                    );
+                    );*/
                     
                     _targetParent.hierarchy.Insert(insertIndex++, instance);
                     _instances.Add(instance);

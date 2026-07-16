@@ -2,11 +2,13 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 
@@ -246,7 +248,7 @@ namespace Armoury.UniNg.CodeGen
                     {{accessibility}} partial class {{className}} : IInputReceiver, IParentBindingSource
                     {
                         {{GenerateInputs(inputs, componentSymbol, inputAttributeSymbol, unityObjectSymbol)}}
-                        {{GenerateParentInputBindings(parentBindings, componentSymbol, bindingAttributeSymbol, unityObjectSymbol)}}
+                        {{GenerateParentInputBindings(parentBindings, componentSymbol, bindingAttributeSymbol, unityObjectSymbol, context.Compilation)}}
                         
                         #if UNITY_EDITOR
                         {{GenerateInputsMetadata(inputs, componentSymbol, inputAttributeSymbol, unityObjectSymbol)}}
@@ -340,9 +342,14 @@ namespace Armoury.UniNg.CodeGen
             IReadOnlyList<InputMember> parentBindings,
             INamedTypeSymbol componentSymbol,
             INamedTypeSymbol bindingAttributeSymbol,
-            INamedTypeSymbol unityObjectSymbol
+            INamedTypeSymbol unityObjectSymbol,
+            Compilation compilation
         )
         {
+            var collectionBindings = GetCollectionBindings(
+                parentBindings,
+                compilation);
+            
             return $$"""
                 internal static class __ParentBindingId
                         {
@@ -372,6 +379,29 @@ namespace Armoury.UniNg.CodeGen
                                 }
                             }
                         }
+                        
+                        bool IParentBindingSource.TryResolveParentBindingElement(
+                            ulong bindingId,
+                            int index,
+                            out InputValue value)
+                        {
+                            switch (bindingId)
+                            {
+                            {{
+                                string.Join(
+                                    "\n",
+                                    collectionBindings.Select(collectionBinding =>
+                                        Indent(
+                                            GenerateSingleInputCollectionResolver(
+                                                collectionBinding,
+                                                unityObjectSymbol),
+                                            "    ")))
+                            }}
+                                default:
+                                    value = default;
+                                    return false;
+                            }
+                        }
                 """;
             
             static string GenerateSingleBindingDefinition(
@@ -395,6 +425,36 @@ namespace Armoury.UniNg.CodeGen
                                 value = InputValue.From{{accessorName}}({{parentBinding.Name}});
                                 return true;
                                 """, "                ");
+            }
+            
+            static string GenerateSingleInputCollectionResolver(
+                in CollectionInputMember collectionBinding,
+                INamedTypeSymbol unityObjectSymbol)
+            {
+                var parentBinding = collectionBinding.Member;
+
+                var kindName = GetInputValueKindName(collectionBinding.ElementType, unityObjectSymbol);
+
+                var countExpression = collectionBinding.IsArray
+                    ? "collection.Length"
+                    : "collection.Count";
+
+                return $"case __ParentBindingId.{parentBinding.Name}:\n" +
+                       Indent(
+                           $$"""
+                                 var collection = {{parentBinding.Name}};
+    
+                                 if (collection == null ||
+                                     (uint)index >= (uint){{countExpression}})
+                                 {
+                                     value = default;
+                                     return false;
+                                 }
+
+                                 value = InputValue.From{{kindName}}(collection[index]);
+                                 return true;
+                             """,
+                           "            ");
             }
         }
 
@@ -927,6 +987,131 @@ namespace Armoury.UniNg.CodeGen
 
             return false;
         }
+        
+        private static ImmutableArray<CollectionInputMember> GetCollectionBindings(
+            IReadOnlyList<InputMember> parentBindings,
+            Compilation compilation)
+        {
+            var iListDefinition = compilation.GetTypeByMetadataName(
+                "System.Collections.Generic.IList`1");
+
+            var readOnlyListDefinition = compilation.GetTypeByMetadataName(
+                "System.Collections.Generic.IReadOnlyList`1");
+
+            var result = ImmutableArray.CreateBuilder<CollectionInputMember>();
+
+            foreach (var parentBinding in parentBindings)
+            {
+                if (!TryGetCollectionElementType(
+                        parentBinding.Type,
+                        iListDefinition,
+                        readOnlyListDefinition,
+                        out var elementType,
+                        out var isArray))
+                {
+                    continue;
+                }
+
+                result.Add(new CollectionInputMember(
+                    in parentBinding,
+                    elementType,
+                    isArray));
+            }
+
+            return result.ToImmutable();
+        }
+        
+        private static bool TryGetCollectionElementType(
+            ITypeSymbol type,
+            INamedTypeSymbol? iListDefinition,
+            INamedTypeSymbol? readOnlyListDefinition,
+            out ITypeSymbol elementType,
+            out bool isArray)
+        {
+            if (type is IArrayTypeSymbol arrayType)
+            {
+                if (arrayType.Rank == 1)
+                {
+                    elementType = arrayType.ElementType;
+                    isArray = true;
+                    return true;
+                }
+
+                elementType = null!;
+                isArray = false;
+                return false;
+            }
+
+            if (type is not INamedTypeSymbol namedType)
+            {
+                elementType = null!;
+                isArray = false;
+                return false;
+            }
+
+            if (TryGetInterfaceElementType(
+                    namedType,
+                    iListDefinition,
+                    readOnlyListDefinition,
+                    out elementType))
+            {
+                isArray = false;
+                return true;
+            }
+
+            foreach (var interfaceType in namedType.AllInterfaces)
+            {
+                if (TryGetInterfaceElementType(
+                        interfaceType,
+                        iListDefinition,
+                        readOnlyListDefinition,
+                        out elementType))
+                {
+                    isArray = false;
+                    return true;
+                }
+            }
+
+            elementType = null!;
+            isArray = false;
+            return false;
+        }
+        
+        private static bool TryGetInterfaceElementType(
+            INamedTypeSymbol type,
+            INamedTypeSymbol? iListDefinition,
+            INamedTypeSymbol? readOnlyListDefinition,
+            out ITypeSymbol elementType)
+        {
+            if (!type.IsGenericType || type.TypeArguments.Length != 1)
+            {
+                elementType = null!;
+                return false;
+            }
+
+            var originalDefinition = type.OriginalDefinition;
+
+            var isList =
+                iListDefinition != null &&
+                SymbolEqualityComparer.Default.Equals(
+                    originalDefinition,
+                    iListDefinition);
+
+            var isReadOnlyList =
+                readOnlyListDefinition != null &&
+                SymbolEqualityComparer.Default.Equals(
+                    originalDefinition,
+                    readOnlyListDefinition);
+
+            if (!isList && !isReadOnlyList)
+            {
+                elementType = null!;
+                return false;
+            }
+
+            elementType = type.TypeArguments[0];
+            return true;
+        }
     }
     
     internal abstract class StableHash
@@ -961,6 +1146,23 @@ namespace Armoury.UniNg.CodeGen
             Type = type;
             Name = name;
             Location = location;
+        }
+    }
+    
+    internal readonly struct CollectionInputMember
+    {
+        public readonly InputMember Member;
+        public readonly ITypeSymbol ElementType;
+        public readonly bool IsArray;
+
+        public CollectionInputMember(
+            in InputMember member,
+            ITypeSymbol elementType,
+            bool isArray)
+        {
+            Member = member;
+            ElementType = elementType;
+            IsArray = isArray;
         }
     }
 }

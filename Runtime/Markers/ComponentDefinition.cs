@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using Unity.Properties;
+using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace Armoury.UI.Markers
@@ -15,6 +16,8 @@ namespace Armoury.UI.Markers
     [UxmlObject]
     public partial class InputBinding
     {
+        public const int CollectionUnspecified = -1, CollectionDynamic = -2;
+        
         [UxmlAttribute("enabled")]
         public bool Enabled { get; set; }
 
@@ -35,6 +38,10 @@ namespace Armoury.UI.Markers
 
         [UxmlAttribute("parent-binding-id")]
         public ulong ParentBindingId { get; set; }
+
+        [UxmlAttribute("collection-index")]
+        public int CollectionIndex { get; set; } = CollectionUnspecified;
+        public bool UsesCollectionElement => CollectionIndex == CollectionDynamic || CollectionIndex >= 0;
 
         [UxmlAttribute("kind")]
         public InputValueKind Kind { get; set; }
@@ -347,40 +354,58 @@ namespace Armoury.UI.Markers
 
     public interface IParentBindingSource
     {
-        bool TryResolveParentBinding(ulong bindingId, out InputValue value);
+        bool TryResolveParentBinding(
+            ulong bindingId,
+            out InputValue value);
+
+        bool TryResolveParentBindingElement(
+            ulong bindingId,
+            int index,
+            out InputValue value);
     }
     
     public static class ParentBindingResolver
     {
         public static InputValue Resolve(
             object parent,
-            in InputBinding binding
-        )
+            in InputBinding binding)
         {
             if (TryResolve(parent, in binding, out var value))
                 return value;
+            
+            var bindingPath = binding.UsesCollectionElement
+                ? $"{binding.BindingPath}[{(binding.CollectionIndex == InputBinding.CollectionDynamic ? "Dynamic" : binding.CollectionIndex)}]"
+                : binding.BindingPath;
 
             throw new System.InvalidOperationException(
-                $"Could not resolve parent binding '{binding.BindingPath}' " +
-                $"with id '{binding.ParentBindingId}' on parent '{parent?.GetType().FullName ?? "null"}'."
-            );
+                $"Could not resolve parent binding '{bindingPath}' " +
+                $"with id '{binding.ParentBindingId}' on parent " +
+                $"'{parent?.GetType().FullName ?? "null"}'.");
         }
 
         public static bool TryResolve(
             object parent,
             in InputBinding binding,
-            out InputValue value
-        )
+            out InputValue value)
         {
             value = default;
 
             if (parent is not IParentBindingSource source)
+            {
                 return false;
+            }
+
+            if (binding.UsesCollectionElement)
+            {
+                return source.TryResolveParentBindingElement(
+                    binding.ParentBindingId,
+                    binding.CollectionIndex,
+                    out value);
+            }
 
             return source.TryResolveParentBinding(
                 binding.ParentBindingId,
-                out value
-            );
+                out value);
         }
     }
 

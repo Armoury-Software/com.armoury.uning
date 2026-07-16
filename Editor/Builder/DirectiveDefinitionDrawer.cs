@@ -304,6 +304,7 @@ namespace Armoury.UI.Markers.Editor
         {
             var inputNameValue = inputProperty.FindPropertyRelative(nameof(InputBinding.InputName)).stringValue;
             var bindingPathProperty = inputProperty.FindPropertyRelative(nameof(InputBinding.BindingPath));
+            var collectionIndexProperty = inputProperty.FindPropertyRelative(nameof(InputBinding.CollectionIndex));
             var parentBindingIdProperty = inputProperty.FindPropertyRelative(nameof(InputBinding.ParentBindingId));
             var inputSourceProperty = inputProperty.FindPropertyRelative(nameof(InputBinding.Source));
 
@@ -374,14 +375,15 @@ namespace Armoury.UI.Markers.Editor
                         parentTypeProperty.serializedObject.ApplyModifiedProperties();
                         parentTypeProperty.serializedObject.Update();
                     },
-                    onBindingSelected: (selectedType, bindingDescriptor) =>
+                    onBindingSelected: (selectedType, selection) =>
                     {
                         inputProperty.serializedObject.Update();
 
                         inputSourceProperty.enumValueIndex = (int)InputValueSource.ParentBinding;
                     
-                        parentBindingIdProperty.ulongValue = bindingDescriptor.Id;
-                        bindingPathProperty.stringValue = bindingDescriptor.Path;
+                        parentBindingIdProperty.ulongValue = selection.Descriptor.Id;
+                        bindingPathProperty.stringValue = selection.Descriptor.Path;
+                        collectionIndexProperty.intValue = selection.CollectionIndex ?? InputBinding.CollectionUnspecified;
 
                         inputProperty.serializedObject.ApplyModifiedProperties();
                         inputProperty.serializedObject.Update();
@@ -439,6 +441,7 @@ namespace Armoury.UI.Markers.Editor
             SetWithOverride(bindingProperty, nameof(InputBinding.InputName), p => p.stringValue = descriptor.MemberName);
             SetWithOverride(bindingProperty, nameof(InputBinding.InputAlias), p => p.stringValue = descriptor.Alias);
             SetWithOverride(bindingProperty, nameof(InputBinding.Kind), p => p.enumValueIndex = (int)descriptor.Kind);
+            SetWithOverride(bindingProperty, nameof(InputBinding.CollectionIndex), p => p.intValue = InputBinding.CollectionUnspecified);
             SetWithOverride(bindingProperty, nameof(InputBinding.Source), p => p.enumValueIndex = (int)InputValueSource.Literal);
 
             var literalValueProperty = bindingProperty.FindPropertyRelative(nameof(InputBinding.LiteralValue));
@@ -478,28 +481,6 @@ namespace Armoury.UI.Markers.Editor
 
             assign(child);
             MarkUxmlAttributeAsOverridden(owner, propertyName);
-        }
-        
-        private static bool HasInput(
-            SerializedProperty inputsProperty,
-            ulong inputId
-        )
-        {
-            var count = inputsProperty.arraySize;
-            
-            if ((int) inputId >= count)
-                return false;
-
-            for (var i = 0; i < count; i++)
-            {
-                var item = inputsProperty.GetArrayElementAtIndex(i);
-                var itemInputId = item.FindPropertyRelative("InputId").ulongValue;
-
-                if (itemInputId == inputId)
-                    return true;
-            }
-
-            return false;
         }
         
         private static void MarkUxmlAttributeAsOverridden(
@@ -638,7 +619,7 @@ namespace Armoury.UI.Markers.Editor
                 property.boxedValue is ComponentDefinition.UxmlSerializedData ? typeof(Component) : typeof(Directive)
             );
 
-        internal static VisualElement DrawTypeBadge(Type type)
+        private static VisualElement DrawTypeBadge(Type type)
             => DrawBadge(
                 type.Name,
                 Color.lightPink,
@@ -736,11 +717,13 @@ namespace Armoury.UI.Markers.Editor
         private Type _expectedValueType;
 
         private Action<Type> _onDataSourceTypeSelected;
-        private Action<Type, ParentBindingDescriptor> _onBindingSelected;
+        private Action<Type, ParentBindingSelection> _onBindingSelected;
 
         private readonly List<TypeChoice> _typeChoices = new();
         private readonly List<Entry> _allEntries = new();
         private readonly List<Entry> _filteredEntries = new();
+        
+        private IntegerField _collectionIndexField;
 
         private PopupField<TypeChoice> _typeField;
         private TextField _searchField;
@@ -753,7 +736,7 @@ namespace Armoury.UI.Markers.Editor
             InputValueKind? expectedKind,
             Type expectedValueType,
             Action<Type> onDataSourceTypeSelected,
-            Action<Type, ParentBindingDescriptor> onBindingSelected)
+            Action<Type, ParentBindingSelection> onBindingSelected)
         {
             var window = CreateInstance<ParentBindingPathWindow>();
 
@@ -832,6 +815,22 @@ namespace Armoury.UI.Markers.Editor
 
             _searchField.RegisterValueChangedCallback(evt => ApplyFilter(evt.newValue));
             rootVisualElement.Add(_searchField);
+            
+            _collectionIndexField = new IntegerField("Element Index")
+            {
+                value = 0,
+                style =
+                {
+                    display = DisplayStyle.None
+                }
+            };
+
+            _collectionIndexField.RegisterValueChangedCallback(_ =>
+            {
+                UpdateBindButtonState();
+            });
+
+            rootVisualElement.Add(_collectionIndexField);
 
             _listView = new ListView
             {
@@ -856,6 +855,7 @@ namespace Armoury.UI.Markers.Editor
 
             _listView.selectionChanged += _ =>
             {
+                UpdateCollectionIndexState();
                 UpdateBindButtonState();
             };
 
@@ -892,6 +892,17 @@ namespace Armoury.UI.Markers.Editor
                 _typeField.Focus();
             else
                 _searchField.Focus();
+        }
+        
+        private void UpdateCollectionIndexState()
+        {
+            if (_collectionIndexField == null)
+                return;
+
+            _collectionIndexField.style.display =
+                _listView?.selectedItem is Entry { IsCollectionElement: true }
+                    ? DisplayStyle.Flex
+                    : DisplayStyle.None;
         }
 
         private void BuildTypeChoices()
@@ -951,10 +962,36 @@ namespace Armoury.UI.Markers.Editor
                 var descriptors = ParentBindingRegistry.Get(_dataSourceType);
 
                 foreach (var descriptor in descriptors)
-                    _allEntries.Add(new Entry(descriptor));
+                {
+                    // Ordinary direct binding.
+                    if (IsDirectlyCompatible(descriptor))
+                    {
+                        _allEntries.Add(new Entry(
+                            descriptor,
+                            descriptor.ValueType,
+                            isCollectionElement: false));
+                    }
+
+                    // Collection element binding.
+                    if (_expectedValueType != null &&
+                        descriptor.ValueType != null &&
+                        TryGetCollectionElementType(
+                            descriptor.ValueType,
+                            out var elementType) &&
+                        IsTypeCompatible(_expectedValueType, elementType))
+                    {
+                        _allEntries.Add(new Entry(
+                            descriptor,
+                            elementType,
+                            isCollectionElement: true));
+                    }
+                }
 
                 _allEntries.Sort(static (a, b) =>
-                    string.Compare(a.Descriptor.Path, b.Descriptor.Path, StringComparison.Ordinal));
+                    string.Compare(
+                        a.Descriptor.Path,
+                        b.Descriptor.Path,
+                        StringComparison.Ordinal));
             }
 
             ApplyFilter(_searchField?.value ?? "");
@@ -971,13 +1008,13 @@ namespace Armoury.UI.Markers.Editor
             {
                 var descriptor = entry.Descriptor;
 
-                if (!IsCompatible(descriptor))
-                    continue;
-
                 if (search.Length > 0 &&
-                    descriptor.Path.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0 &&
-                    GetNiceTypeName(descriptor.ValueType).IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0 &&
-                    descriptor.Kind.ToString().IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0)
+                    descriptor.Path.IndexOf(
+                        search,
+                        StringComparison.OrdinalIgnoreCase) < 0 &&
+                    GetNiceTypeName(entry.ResolvedValueType).IndexOf(
+                        search,
+                        StringComparison.OrdinalIgnoreCase) < 0)
                 {
                     continue;
                 }
@@ -989,13 +1026,14 @@ namespace Armoury.UI.Markers.Editor
             UpdateState();
         }
 
-        private bool IsCompatible(ParentBindingDescriptor descriptor)
+        private bool IsDirectlyCompatible(
+            ParentBindingDescriptor descriptor)
         {
-            if (!_expectedKind.HasValue)
+            if (!_expectedKind.HasValue ||
+                _expectedKind.Value == InputValueKind.None)
+            {
                 return true;
-
-            if (_expectedKind.Value == InputValueKind.None)
-                return true;
+            }
 
             if (descriptor.Kind != _expectedKind.Value)
                 return false;
@@ -1008,8 +1046,7 @@ namespace Armoury.UI.Markers.Editor
 
             return IsTypeCompatible(
                 expectedType: _expectedValueType,
-                actualType: descriptor.ValueType
-            );
+                actualType: descriptor.ValueType);
         }
         
         private static bool IsTypeCompatible(Type expectedType, Type actualType)
@@ -1079,10 +1116,16 @@ namespace Armoury.UI.Markers.Editor
             if (_bindButton == null)
                 return;
 
+            var entry = _listView?.selectedItem as Entry;
+
+            var hasValidIndex =
+                entry is not { IsCollectionElement: true } ||
+                _collectionIndexField.value >= 0;
+
             _bindButton.SetEnabled(
                 _dataSourceType != null &&
-                _listView?.selectedItem is Entry
-            );
+                entry != null &&
+                hasValidIndex);
         }
 
         private static VisualElement MakeRow()
@@ -1133,24 +1176,49 @@ namespace Armoury.UI.Markers.Editor
             return row;
         }
 
-        private void BindRow(VisualElement row, int index)
+        private void BindRow(
+            VisualElement row,
+            int index)
         {
-            var descriptor = _filteredEntries[index].Descriptor;
+            var entry = _filteredEntries[index];
 
-            row.Q<Label>("Path").text = descriptor.Path;
-            row.Q<Label>("Kind").text = descriptor.Kind.ToString();
-            row.Q<Label>("Type").text = GetNiceTypeName(descriptor.ValueType);
+            row.Q<Label>("Path").text =
+                entry.IsCollectionElement
+                    ? $"{entry.Descriptor.Path}[index]"
+                    : entry.Descriptor.Path;
+
+            row.Q<Label>("Kind").text =
+                entry.IsCollectionElement
+                    ? "Element"
+                    : entry.Descriptor.Kind.ToString();
+
+            row.Q<Label>("Type").text =
+                GetNiceTypeName(entry.ResolvedValueType);
         }
 
         private void Choose(Entry entry)
         {
-            if (entry == null)
+            if (entry == null || _dataSourceType == null)
                 return;
 
-            if (_dataSourceType == null)
-                return;
+            int? collectionIndex = null;
 
-            _onBindingSelected?.Invoke(_dataSourceType, entry.Descriptor);
+            if (entry.IsCollectionElement)
+            {
+                if (_collectionIndexField.value < 0)
+                    return;
+
+                collectionIndex = _collectionIndexField.value;
+            }
+
+            var selection = new ParentBindingSelection(
+                entry.Descriptor,
+                collectionIndex);
+
+            _onBindingSelected?.Invoke(
+                _dataSourceType,
+                selection);
+
             Close();
         }
 
@@ -1171,6 +1239,50 @@ namespace Armoury.UI.Markers.Editor
 
             return type.Name;
         }
+        
+        private static bool TryGetCollectionElementType(
+            Type type,
+            out Type elementType)
+        {
+            type = Nullable.GetUnderlyingType(type) ?? type;
+
+            if (type.IsArray)
+            {
+                elementType = type.GetElementType();
+                return elementType != null;
+            }
+
+            if (type.IsGenericType)
+            {
+                var definition = type.GetGenericTypeDefinition();
+
+                if (definition == typeof(List<>) ||
+                    definition == typeof(IList<>) ||
+                    definition == typeof(IReadOnlyList<>))
+                {
+                    elementType = type.GetGenericArguments()[0];
+                    return true;
+                }
+            }
+
+            foreach (var interfaceType in type.GetInterfaces())
+            {
+                if (!interfaceType.IsGenericType)
+                    continue;
+
+                var definition = interfaceType.GetGenericTypeDefinition();
+
+                if (definition == typeof(IList<>) ||
+                    definition == typeof(IReadOnlyList<>))
+                {
+                    elementType = interfaceType.GetGenericArguments()[0];
+                    return true;
+                }
+            }
+
+            elementType = null;
+            return false;
+        }
 
         private sealed class TypeChoice
         {
@@ -1186,11 +1298,32 @@ namespace Armoury.UI.Markers.Editor
 
         private sealed class Entry
         {
-            public readonly ParentBindingDescriptor Descriptor;
+            public ParentBindingDescriptor Descriptor { get; }
+            public Type ResolvedValueType { get; }
+            public bool IsCollectionElement { get; }
 
-            public Entry(ParentBindingDescriptor descriptor)
+            public Entry(
+                ParentBindingDescriptor descriptor,
+                Type resolvedValueType,
+                bool isCollectionElement)
             {
                 Descriptor = descriptor;
+                ResolvedValueType = resolvedValueType;
+                IsCollectionElement = isCollectionElement;
+            }
+        }
+        
+        public readonly struct ParentBindingSelection
+        {
+            public ParentBindingDescriptor Descriptor { get; }
+            public int? CollectionIndex { get; }
+
+            public ParentBindingSelection(
+                ParentBindingDescriptor descriptor,
+                int? collectionIndex = null)
+            {
+                Descriptor = descriptor;
+                CollectionIndex = collectionIndex;
             }
         }
     }

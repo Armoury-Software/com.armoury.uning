@@ -201,10 +201,10 @@ namespace Armoury.UI
                 {
                     if (!ngForMarker.Compile())
                     {
-                        Debug.LogWarning($"[ViewContainerRef (ScaffoldChildren, NgForDirectiveMarker):] Compilation failed" +
-                                         $"to produce any NgFor item. This means that the NgFor will be populated after" +
-                                         $"the scaffolding has been done. Hence, the tree needs to be scaffolded again" +
-                                         $"after that has happened. This usually happens because the ItemsSource binding" +
+                        Debug.LogWarning($"[ViewContainerRef (ScaffoldChildren, NgForDirectiveMarker):] Compilation failed " +
+                                         $"to produce any NgFor item. This means that the NgFor will be populated after " +
+                                         $"the scaffolding has been done. Hence, the tree needs to be scaffolded again " +
+                                         $"after that has happened. This usually happens because the ItemsSource binding " +
                                          $"is being resolved too late.");
                         
                         // TODO: IMPORTANT! DON'T DO THIS! This is just a band-aid workaround for the debug above, until ..
@@ -230,6 +230,13 @@ namespace Armoury.UI
                                         
                                         var compParent = compMark.parent;
                                         var compMarkerIndexInParent = compParent.IndexOf(compMark);
+                                        
+                                        InputAssignment[] inputs = null;
+                                        if (compMark.Component?.Inputs != null)
+                                        {
+                                            inputs = new InputAssignment[compMark.Component.Inputs.Count];
+                                            ComponentInputCompiler.Compile(compMark.Component, compMark.GetHierarchicalDataSourceContext().dataSource, inputs);
+                                        }
             
                                         // TODO: Dispose of any memory owned by the component marker
                                         compMark.RemoveFromHierarchy();
@@ -238,7 +245,7 @@ namespace Armoury.UI
                                         {
                                             InstanceCreateComponentMethod
                                                 .MakeGenericMethod(compMark.ComponentType, typeof(VisualElement))
-                                                .Invoke(viewContainerInstance, new object[] { compMarkerIndexInParent, null });
+                                                .Invoke(viewContainerInstance, new object[] { compMarkerIndexInParent, inputs });
                                         }
                                         else
                                         {
@@ -251,7 +258,7 @@ namespace Armoury.UI
                                                         parent,
                                                         closestUpperLevelInstance.anchor.Injector,
                                                         compMarkerIndexInParent,
-                                                        null
+                                                        inputs
                                                     }
                                                 );
                                         }

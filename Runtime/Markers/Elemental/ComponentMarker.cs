@@ -38,20 +38,23 @@ namespace Armoury.UI.Markers.Elemental
         {
             return new ComponentMarker
             {
-                ComponentType = definition.ComponentType
+                ComponentType = definition.ComponentType,
+                Component = definition.Component,
             };
         }
         
         // TODO: Make abstract
-        public Definition CreateDefinition() => new(ComponentType);
+        public Definition CreateDefinition() => new(ComponentType, Component);
         
         public struct Definition
         {
             public readonly System.Type ComponentType;
+            public readonly ComponentDefinition Component;
 
-            public Definition(System.Type type)
+            public Definition(System.Type type, ComponentDefinition component)
             {
                 ComponentType = type;
+                Component = component;
             }
         }
     }
