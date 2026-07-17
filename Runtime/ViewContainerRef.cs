@@ -1,4 +1,5 @@
-﻿using UnityEngine.UIElements;
+﻿using System.Linq;
+using UnityEngine.UIElements;
 using Armoury.UI.Injectors;
 using Armoury.UI.Markers;
 using Armoury.UI.Markers.Elemental;
@@ -224,8 +225,9 @@ namespace Armoury.UI
                             ngForMarker.schedule
                                 .Execute(() =>
                                 {
-                                    foreach (var instance in ngForMarker.RemoveMe_Instances)
+                                    for (var ii = 0; ii < ngForMarker.RemoveMe_Instances.Count; ii++)
                                     {
+                                        var instance = ngForMarker.RemoveMe_Instances.ElementAt(ii);
                                         var compMark = (ComponentMarker)instance;
                                         
                                         var compParent = compMark.parent;
@@ -235,7 +237,12 @@ namespace Armoury.UI
                                         if (compMark.Component?.Inputs != null)
                                         {
                                             inputs = new InputAssignment[compMark.Component.Inputs.Count];
-                                            ComponentInputCompiler.Compile(compMark.Component, compMark.GetHierarchicalDataSourceContext().dataSource, inputs);
+                                            ComponentInputCompiler.Compile(
+                                                compMark.Component,
+                                                compMark.GetHierarchicalDataSourceContext().dataSource,
+                                                inputs,
+                                                indexInCollection: ii
+                                            );
                                         }
             
                                         // TODO: Dispose of any memory owned by the component marker

@@ -327,11 +327,25 @@ namespace Armoury.UI.Markers.Editor
                 }
             });
 
+            var collectionIndex = collectionIndexProperty.intValue;
+
+            var displayedPath = collectionIndex switch
+            {
+                InputBinding.CollectionDynamic =>
+                    $"{bindingPathProperty.stringValue}[dynamic]",
+
+                >= 0 =>
+                    $"{bindingPathProperty.stringValue}[{collectionIndex}]",
+
+                _ =>
+                    bindingPathProperty.stringValue
+            };
+
             var bindingValue = (
-                !string.IsNullOrEmpty(bindingPathProperty.stringValue)
-                && parentBindingIdProperty.ulongValue != 0
+                !string.IsNullOrEmpty(bindingPathProperty.stringValue) &&
+                parentBindingIdProperty.ulongValue != 0
             )
-                ? $"{bindingPathProperty.stringValue} / {parentBindingIdProperty.ulongValue}"
+                ? $"{displayedPath} / {parentBindingIdProperty.ulongValue}"
                 : "Unset";
             
             root.Add(new Label(bindingValue)
@@ -723,7 +737,9 @@ namespace Armoury.UI.Markers.Editor
         private readonly List<Entry> _allEntries = new();
         private readonly List<Entry> _filteredEntries = new();
         
+        private VisualElement _collectionIndexContainer;
         private IntegerField _collectionIndexField;
+        private Toggle _dynamicCollectionIndexToggle;
 
         private PopupField<TypeChoice> _typeField;
         private TextField _searchField;
@@ -816,12 +832,23 @@ namespace Armoury.UI.Markers.Editor
             _searchField.RegisterValueChangedCallback(evt => ApplyFilter(evt.newValue));
             rootVisualElement.Add(_searchField);
             
+            _collectionIndexContainer = new VisualElement
+            {
+                name = "Collection Index Container",
+                style =
+                {
+                    display = DisplayStyle.None,
+                    flexDirection = FlexDirection.Row,
+                    alignItems = Align.Center
+                }
+            };
+
             _collectionIndexField = new IntegerField("Element Index")
             {
                 value = 0,
                 style =
                 {
-                    display = DisplayStyle.None
+                    flexGrow = 1
                 }
             };
 
@@ -830,7 +857,28 @@ namespace Armoury.UI.Markers.Editor
                 UpdateBindButtonState();
             });
 
-            rootVisualElement.Add(_collectionIndexField);
+            _dynamicCollectionIndexToggle = new Toggle("Dynamic")
+            {
+                value = false,
+                tooltip =
+                    "The element index will be provided dynamically at runtime.",
+                style =
+                {
+                    marginLeft = 12,
+                    flexShrink = 0
+                }
+            };
+
+            _dynamicCollectionIndexToggle.RegisterValueChangedCallback(evt =>
+            {
+                SetDynamicCollectionIndex(evt.newValue);
+                UpdateBindButtonState();
+            });
+
+            _collectionIndexContainer.Add(_collectionIndexField);
+            _collectionIndexContainer.Add(_dynamicCollectionIndexToggle);
+
+            rootVisualElement.Add(_collectionIndexContainer);
 
             _listView = new ListView
             {
@@ -896,13 +944,49 @@ namespace Armoury.UI.Markers.Editor
         
         private void UpdateCollectionIndexState()
         {
+            if (_collectionIndexContainer == null)
+                return;
+
+            var isCollectionElement =
+                _listView?.selectedItem is Entry
+                {
+                    IsCollectionElement: true
+                };
+
+            _collectionIndexContainer.style.display =
+                isCollectionElement
+                    ? DisplayStyle.Flex
+                    : DisplayStyle.None;
+
+            if (!isCollectionElement)
+                return;
+
+            SetDynamicCollectionIndex(
+                _dynamicCollectionIndexToggle.value);
+        }
+        
+        private void SetDynamicCollectionIndex(bool dynamic)
+        {
             if (_collectionIndexField == null)
                 return;
 
-            _collectionIndexField.style.display =
-                _listView?.selectedItem is Entry { IsCollectionElement: true }
-                    ? DisplayStyle.Flex
-                    : DisplayStyle.None;
+            if (dynamic)
+            {
+                _collectionIndexField.SetValueWithoutNotify(
+                    InputBinding.CollectionDynamic);
+
+                _collectionIndexField.SetEnabled(false);
+            }
+            else
+            {
+                _collectionIndexField.SetEnabled(true);
+
+                if (_collectionIndexField.value ==
+                    InputBinding.CollectionDynamic)
+                {
+                    _collectionIndexField.SetValueWithoutNotify(0);
+                }
+            }
         }
 
         private void BuildTypeChoices()
@@ -1120,12 +1204,23 @@ namespace Armoury.UI.Markers.Editor
 
             var hasValidIndex =
                 entry is not { IsCollectionElement: true } ||
-                _collectionIndexField.value >= 0;
+                IsCollectionIndexValid();
 
             _bindButton.SetEnabled(
                 _dataSourceType != null &&
                 entry != null &&
                 hasValidIndex);
+        }
+
+        private bool IsCollectionIndexValid()
+        {
+            if (_dynamicCollectionIndexToggle.value)
+            {
+                return _collectionIndexField.value ==
+                       InputBinding.CollectionDynamic;
+            }
+
+            return _collectionIndexField.value >= 0;
         }
 
         private static VisualElement MakeRow()
@@ -1205,10 +1300,12 @@ namespace Armoury.UI.Markers.Editor
 
             if (entry.IsCollectionElement)
             {
-                if (_collectionIndexField.value < 0)
+                if (!IsCollectionIndexValid())
                     return;
 
-                collectionIndex = _collectionIndexField.value;
+                collectionIndex = _dynamicCollectionIndexToggle.value
+                    ? InputBinding.CollectionDynamic
+                    : _collectionIndexField.value;
             }
 
             var selection = new ParentBindingSelection(

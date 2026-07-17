@@ -233,7 +233,8 @@ namespace Armoury.UI.Markers
         public static int Compile(
             ComponentDefinition definition,
             object parentDataSource,
-            InputAssignment[] output
+            InputAssignment[] output,
+            int indexInCollection = 0
         )
         {
             if (definition?.Inputs == null)
@@ -256,7 +257,8 @@ namespace Armoury.UI.Markers
                 {
                     value = ParentBindingResolver.Resolve(
                         parentDataSource,
-                        in binding
+                        in binding,
+                        indexInCollection
                     );
                 }
 
@@ -368,9 +370,11 @@ namespace Armoury.UI.Markers
     {
         public static InputValue Resolve(
             object parent,
-            in InputBinding binding)
+            in InputBinding binding,
+            int indexInCollection = 0
+        )
         {
-            if (TryResolve(parent, in binding, out var value))
+            if (TryResolve(parent, in binding, out var value, indexInCollection))
                 return value;
             
             var bindingPath = binding.UsesCollectionElement
@@ -386,7 +390,9 @@ namespace Armoury.UI.Markers
         public static bool TryResolve(
             object parent,
             in InputBinding binding,
-            out InputValue value)
+            out InputValue value,
+            int indexInCollection = 0
+        )
         {
             value = default;
 
@@ -399,7 +405,9 @@ namespace Armoury.UI.Markers
             {
                 return source.TryResolveParentBindingElement(
                     binding.ParentBindingId,
-                    binding.CollectionIndex,
+                    binding.CollectionIndex == InputBinding.CollectionDynamic
+                        ? indexInCollection
+                        : binding.CollectionIndex,
                     out value);
             }
 
