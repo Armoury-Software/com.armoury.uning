@@ -44,6 +44,7 @@ namespace Armoury.UI.Dialog
             TComp component,
             Length width = default, Length minWidth = default, Length maxWidth = default,
             Length height = default, Length minHeight = default, Length maxHeight = default,
+            Length? top = null, Length? right = null, Length? bottom = null, Length? left = null,
             string panelClass = "", bool disableCloseOnBackdropClick = false
         )
             where TComp : Component, new()
@@ -57,6 +58,7 @@ namespace Armoury.UI.Dialog
                 component,
                 width: width, minWidth: minWidth, maxWidth: maxWidth,
                 height: height, minHeight: minHeight, maxHeight: maxHeight,
+                top: top, right: right, left: left, bottom: bottom,
                 panelClass: panelClass, disableCloseOnBackdropClick: disableCloseOnBackdropClick
             );
         }
@@ -65,6 +67,7 @@ namespace Armoury.UI.Dialog
             TComp component,
             Length width = default, Length minWidth = default, Length maxWidth = default,
             Length height = default, Length minHeight = default, Length maxHeight = default,
+            Length? top = null, Length? right = null, Length? bottom = null, Length? left = null,
             string panelClass = "", bool disableCloseOnBackdropClick = false
         )
             where TComp : Component, new()
@@ -92,13 +95,31 @@ namespace Armoury.UI.Dialog
             
             // Align on center X/Y
             innerDialog.style.position = Position.Absolute;
-            innerDialog.style.left = Length.Percent(50);
-            innerDialog.style.top = Length.Percent(50);
-            innerDialog.style.translate = new Translate(
-                Length.Percent(-50),
-                Length.Percent(-50)
-            );
-            
+
+            if (top == null && right == null && bottom == null && left == null)
+            {
+                innerDialog.style.left = Length.Percent(50);
+                innerDialog.style.top = Length.Percent(50);
+                innerDialog.style.translate = new Translate(
+                    Length.Percent(-50),
+                    Length.Percent(-50)
+                );
+            }
+            else
+            {
+                if (top.HasValue) innerDialog.style.top = top.Value;
+                if (right.HasValue) innerDialog.style.right = right.Value;
+                if (bottom.HasValue) innerDialog.style.bottom = bottom.Value;
+                if (left.HasValue) innerDialog.style.left = left.Value;
+
+                innerDialog.style.translate = new Translate(
+                    (left != null || right != null)
+                        ? left != null ? left.Value.value / 2f : right.Value.value / 2f : Length.Auto(),
+                    top != null || bottom != null 
+                        ? top != null ? top.Value.value / 2f : bottom.Value.value / 2f : Length.Auto()
+                );
+            }
+
             // TODO: Take default values from a provider
             innerDialog.style.height = height == default ? 200 : height;
 
