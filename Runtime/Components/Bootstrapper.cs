@@ -54,6 +54,7 @@ namespace Armoury.UI
         {
             _injector = new Injector();
             
+            _injector.Inject(new MBProvider(gameObject));
             _injector.Inject(
                 new ElementRef.Provider(new ElementRef(_document.rootVisualElement, _injector))
             );
@@ -82,6 +83,29 @@ namespace Armoury.UI
             Inherit = 0,
             VisibleDefault, VisibleLocked, VisibleConfined,
             HiddenDefault, HiddenLocked, HiddenConfined
+        }
+        
+        private class MBProvider : Provider
+        {
+            private GameObject _host;
+            
+            public MBProvider(GameObject host)
+            {
+                _host = host;
+                
+                IsTyped = true;
+                TypeToken = typeof(MonoBehaviour);
+            }
+            
+            public override T Resolve<T>(Injector injector)
+            {
+                if (_host.TryGetComponent<T>(out var component))
+                {
+                    return component;
+                }
+            
+                throw new System.Exception($"Could not provider-resolve for ({typeof(T)})");
+            }
         }
     }
 }
